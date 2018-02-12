@@ -1,0 +1,43 @@
+您好！
+
+感谢您使用红帽全球技术支持服务！
+
+首先，请悉知当前您提及的问题为硬件设计问题、并非操作系统自身问题导致。如果关于此问题您有任何疑问请联系相关硬件厂商进行确认。
+
+在操作系统中可通过更新相关软件包的方式 规避当前的问题。但软件升级后会对系统、应用的性能产生影响，且此情况无法避免、解决。 因此，在升级前请务必在相应测试环境中进行相关测试，确认升级后对应用产生的具体影响 并采取相关的措施。
+
+红帽已确认红帽提供的部分软件包需要进行相关的升级，目前其中部分软件包更新已经发布。
+
+关于此问题的背景等详细信息，以及相关软件包发布的信息请查看如下链接：
+Kernel Side-Channel Attacks - CVE-2017-5754 CVE-2017-5753 CVE-2017-5715
+https://access.redhat.com/security/vulnerabilities/speculativeexecution
+
+注意，当前部分软件包的更新尚未发布，如果您没有通过红帽客户门户网站订阅软件更新提醒， 请关注上述文档的更新。
+
+针对红帽提供的软件，您可通过如下方式进行软件包的安装：
+1. 如果您的系统可以连接到红帽客户门户网站，请参考如下文档将系统注册至RHSM然后通过yum进行软件包安装：
+How do I apply package updates to my RHEL system?
+https://access.redhat.com/articles/11258
+
+2. 如果系统无法直接连接到公网，请按照如下文档下载相关软件包然后进行软件包安装：
+How to download rpm package manually from the Customer Portal?
+https://access.redhat.com/solutions/6996
+
+How to install or upgrade an RPM package?
+https://access.redhat.com/solutions/1189
+
+3. 此外，您可参照如下KCS通过可以连接公网的系统将相关软件包下载至本地，然后创建供本地系统使用的yum软件源：
+How to create a local mirror of the latest update for Red Hat Enterprise Linux 5, 6, 7 without using Satellite server?
+https://access.redhat.com/solutions/23016
+
+4. 由于修复是安装新的内核，所以您需要在安装后重启并使用新内核引导系统
+
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+-------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+-------------------------------------------------

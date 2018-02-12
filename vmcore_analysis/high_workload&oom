@@ -1,0 +1,537 @@
+Hello Luke,
+
+Hope you're doing good.
+
+My name is Buland, I am a Software Maintenance Engineer from the kernel speciality group.
+
+The analysis of kernel crash dump (vmcore) shows that the system was under high load and
+memory pressure.
+
+A detail investigation shows that:
+
+o The total number of CPUs on this system are 8 and the load averages reached upto 951.
+- 608 Running/Runnable (RU) and 351 Uninterruptable (UN) State tasks were contributing
+  to the high load averages.
+o The total usable physical memory on this system is ~62.8 GiB.
+o Out of ~62.8 GiB of the total physical memory:
+- ~61.29 GiB of the physical memory was allocated to user-space applications.
+- 'python' and 'java' tasks were the largest consumers of the total physical memory (RSS).
+- 'python' tasks were alone utilizing ~35.38 GiB of the total physical memory.
+- 'python' tasks were running with the privilege of 'root' UID (215573) and GID (210).
+- 'java' tasks were alone utilizing ~19.05 GiB of the total physical memory.
+- 'java' tasks were running with the privilege of 'root' UID (653886) and GID (210).
+- 'java' tasks were also the largest consumer of swap memory.
+o The workload was demanding ~92 GiB over the commit limit of ~37.4 GiB of memory.
+o The evidences in the kernel crash dump are pointing towards.
+   [1] Memory over-commitment abuse due to an over-sized workload.
+   [2] High memory usage is user-space ('python' and 'java' tasks).
+
+Here's an excerpt from the crash analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE
+    NODENAME: dbsrp1815.uhc.com
+     RELEASE: 3.10.0-514.6.1.el7.x86_64
+
+crash> sys -i | grep -e DMI_PRODUCT_NAME
+       DMI_PRODUCT_NAME: VMware Virtual Platform
+
+Normal zone information of Node 0:
+
+crash> kmem -z | grep -e Normal -A 3
+NODE: 0  ZONE: 2  ADDR: ffff88103ff9d000  NAME: "Normal"
+  SIZE: 15990784  MIN/LOW/HIGH: 16152/20190/24228
+  VM_STAT:
+                NR_FREE_PAGES: 6053
+
+Notice that 'NR_FREE_PAGES' in ZONE_NORMAL of Node 0 is *below* 'MIN' water mark. It means
+the minimum requirement of  memory (min) is greater than available memory (free) in Normal
+Zone (ZONE_NORMAL) of Node 0.
+
+The analysis of memory utilization indicates that the system was utilizing almost 100% of
+physical memory and 100% of swap memory.
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  16451619      62.8 GB         ----
+         FREE     71738     280.2 MB    0% of TOTAL MEM
+         USED  16379881      62.5 GB   99% of TOTAL MEM
+       SHARED     16783      65.6 MB    0% of TOTAL MEM
+      BUFFERS         0            0    0% of TOTAL MEM
+       CACHED     49551     193.6 MB    0% of TOTAL MEM
+         SLAB     68307     266.8 MB    0% of TOTAL MEM
+
+   TOTAL HUGE         0            0         ----
+    HUGE FREE         0            0    0% of TOTAL HUGE
+
+   TOTAL SWAP   1572862         6 GB         ----
+    SWAP USED   1572862         6 GB  100% of TOTAL SWAP
+    SWAP FREE         0            0    0% of TOTAL SWAP
+
+ COMMIT LIMIT   9798671      37.4 GB         ----
+    COMMITTED  24126126        92 GB  246% of TOTAL LIMIT
+
+The actual committed memory exceed the commit limit of ~37.4 GiB by ~56.4 GiB.
+
+The total memory allocated to user-space process(es) is 61.29 GiB.
+
+crash> ps -u -G | sed 's/>//g' | awk '{ total += $8 } END { printf "Total RSS of user-mode: %.02f GiB\n", total/2^20 }'
+Total RSS of user-mode: 61.29 GiB
+
+'python' and 'java' tasks were the largest consumer of physical memory (Resident Set Size).
+
+List of user-space tasks and their corresponding memory usage (RSS):
+
+crash> ps -Gu | sed 's/^>//' | awk '{ m[$9]+=$8 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+              python   37103532 KiB
+                java   19977308 KiB
+                   R    3985784 KiB
+           python3.4    1717436 KiB
+     jupyterhub-sing    1228188 KiB
+            gunicorn      69560 KiB
+          jupyterhub      31356 KiB
+             dockerd      26328 KiB
+               .vasd      25700 KiB
+                node      18988 KiB
+                bash       9464 KiB
+               perfd       8660 KiB
+     docker-containe       6372 KiB
+             scopeux       5952 KiB
+              docker       5456 KiB
+           perfalarm       5044 KiB
+                 ksh       4188 KiB
+            midaemon       3884 KiB
+               tuned       3144 KiB
+                ovcd       2864 KiB
+                sshd       2668 KiB
+               snmpd       2476 KiB
+             ovbbccb       2388 KiB
+             opcmsga       2240 KiB
+             systemd       2048 KiB
+             ovconfd       1800 KiB
+                coda       1672 KiB
+      NetworkManager       1436 KiB
+              pickup       1016 KiB
+            rsyslogd        904 KiB
+               fsmon        808 KiB
+             opcmsgi        692 KiB
+         sftp-server        592 KiB
+        docker-proxy        560 KiB
+            vmtoolsd        516 KiB
+               opcle        516 KiB
+             opcmona        468 KiB
+         dbus-daemon        456 KiB
+             polkitd        400 KiB
+             opcacta        396 KiB
+           maprlogin        352 KiB
+     systemd-journal        268 KiB
+      systemd-logind        260 KiB
+             lvmetad        236 KiB
+       systemd-udevd        192 KiB
+          irqbalance        176 KiB
+                rtmd        116 KiB
+             chronyd        116 KiB
+              auditd        116 KiB
+             audispd        116 KiB
+                qmgr        112 KiB
+               crond        112 KiB
+          sedispatch        108 KiB
+              dsilog        108 KiB
+           rhsmcertd         88 KiB
+              master         84 KiB
+             rpcbind         64 KiB
+                  sh         44 KiB
+            gssproxy         44 KiB
+                lsmd         36 KiB
+                 atd         32 KiB
+              csshst         20 KiB
+              xinetd          8 KiB
+                 ttd          8 KiB
+                sudo          8 KiB
+           rpc.statd          8 KiB
+               cupsd          8 KiB
+                 cat          8 KiB
+              agetty          8 KiB
+                COMM          0 KiB
+
+'python' tasks were alone utilizing ~35.38 GiB of the total physical memory.
+
+crash> ps -Gu python | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 " GB"}'
+total 35.3847 GB
+
+'java' tasks were alone utilizing ~19.05 GiB of the total physical memory.
+
+crash> ps -Gu java | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 " GB"}'
+total 19.0518 GB
+
+'java' tasks were also the largest consumer of swap memory.
+
+List of user-space tasks and their corresponding swap usage:
+
+crash> pswap -Gk | awk '{ m[$3]+=$2 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+                java    3131516 KiB
+     jupyterhub-sing    1486140 KiB
+              python    1036476 KiB
+                   R     272432 KiB
+           python3.4     135384 KiB
+               .vasd      20684 KiB
+               perfd      16624 KiB
+            midaemon      16228 KiB
+             dockerd      13932 KiB
+             polkitd       9268 KiB
+               tuned       7720 KiB
+             scopeux       7260 KiB
+          jupyterhub       5868 KiB
+                bash       5352 KiB
+               fsmon       5268 KiB
+                coda       4404 KiB
+                node       4376 KiB
+       systemd-udevd       3508 KiB
+            gunicorn       3376 KiB
+                 ksh       3252 KiB
+                ovcd       3084 KiB
+               snmpd       2704 KiB
+            vmtoolsd       2088 KiB
+             opcmsga       1976 KiB
+             lvmetad       1812 KiB
+             ovconfd       1780 KiB
+                rtmd       1752 KiB
+             opcacta       1632 KiB
+           perfalarm       1560 KiB
+             opcmona       1252 KiB
+               cupsd       1132 KiB
+             opcmsgi       1124 KiB
+             systemd       1044 KiB
+      NetworkManager       1044 KiB
+             ovbbccb       1008 KiB
+               opcle        984 KiB
+                qmgr        968 KiB
+              master        956 KiB
+                sudo        880 KiB
+           rpc.statd        844 KiB
+            rsyslogd        780 KiB
+                sshd        744 KiB
+           maprlogin        552 KiB
+               crond        528 KiB
+             rpcbind        512 KiB
+            gssproxy        456 KiB
+              auditd        344 KiB
+         dbus-daemon        312 KiB
+             chronyd        264 KiB
+                  sh        260 KiB
+              xinetd        252 KiB
+     systemd-journal        244 KiB
+                 atd        184 KiB
+              dsilog        180 KiB
+          irqbalance        156 KiB
+                 ttd        144 KiB
+      systemd-logind        136 KiB
+          sedispatch        124 KiB
+             audispd        124 KiB
+              agetty        120 KiB
+                lsmd        116 KiB
+                 cat         88 KiB
+           rhsmcertd         72 KiB
+              csshst         68 KiB
+         sftp-server          0 KiB
+              pickup          0 KiB
+        docker-proxy          0 KiB
+     docker-containe          0 KiB
+              docker          0 KiB
+                COMM          0 KiB
+
+Threads of 'python' task were running with the privilege of 'root' UID (215573) & GID (210).
+
+crash> set 1168
+    PID: 1168
+COMMAND: "python"
+   TASK: ffff8803ee7caf10  [THREAD_INFO: ffff880e9e7c0000]
+    CPU: 3
+  STATE: TASK_RUNNING
+
+crash> task_struct.cred ffff8803ee7caf10
+  cred = 0xffff88058af89980
+
+UID and GID of 'python' task.
+
+crash> cred.uid,gid 0xffff88058af89980
+  uid = {
+    val = 215573
+  }
+  gid = {
+    val = 210
+  }
+
+Parent process hierarchy of 'python' task PID (1168):
+
+crash> ps -p 1168
+PID: 0      TASK: ffffffff819c1460  CPU: 0   COMMAND: "swapper/0"
+ PID: 1      TASK: ffff8801799d8000  CPU: 7   COMMAND: "systemd"
+  PID: 2898   TASK: ffff880ffaf7af10  CPU: 6   COMMAND: "sudo"
+   PID: 2899   TASK: ffff880fdb2dde20  CPU: 2   COMMAND: "sh"
+    PID: 2900   TASK: ffff880fd2b1ce70  CPU: 2   COMMAND: "jupyterhub"
+     PID: 25823  TASK: ffff880b4d3f8000  CPU: 3   COMMAND: "jupyterhub-sing"
+      PID: 1168   TASK: ffff8803ee7caf10  CPU: 3   COMMAND: "python"
+
+The argument and environment data for the 'python' task PID (1168):
+
+crash> ps -a 1168
+PID: 1168   TASK: ffff8803ee7caf10  CPU: 3   COMMAND: "python"
+ARG: /usr/bin/python -m ipykernel -f /home/mhealy10/.local/share/jupyter/runtime/kernel-e75594da-3057-4897-b55d-2fdfb21793d9.json
+ENV: PATH=/usr/bin:/app/python3/python/bin:/sbin:/bin:/usr/sbin:/usr/bin:/opt/node/bin:/opt/python3/bin::
+     PYTHONPATH=/opt/mapr/spark/spark-1.6.1/python/lib/py4j-0.9-src.zip:/opt/mapr/spark/spark-1.6.1/python/
+     SPARK_CONF_DIR=/app/sandbox2/spark-conf/conf
+     SPARK_HOME=/opt/mapr/spark/spark-1.6.1/
+     HOME=/home/mhealy10
+     PYSPARK_SUBMIT_ARGS=--master yarn-client pyspark-shell
+     USER=mhealy10
+     PYTHONSTARTUP=/opt/mapr/spark/spark-1.6.1/python/pyspark/SparkConfigurationScript.py
+     PYSPARK_PYTHON=/mapr/datalake/tools/python/bin/python
+     JPY_PARENT_PID=25823
+     SHELL=/bin/bash
+     HIVE_CONF_DIR=/app/sandbox2/spark-conf/conf
+     LANG=en_US.UTF-8
+
+List of open files by 'python' task PID (1168):
+
+crash> files 1168
+PID: 1168   TASK: ffff8803ee7caf10  CPU: 3   COMMAND: "python"
+ROOT: /    CWD: /app/notebooks/Users/DSU-NJ1701/Mitchell/Financial_Forecasting/forecast/Mitchell
+ FD       FILE            DENTRY           INODE       TYPE PATH
+  0 ffff88007af96400 ffff880f7220f080 ffff880ff5873e70 FIFO
+  1 ffff880ff9005600 ffff880ffbfb55c0 ffff880ff859df38 REG  /app/run_jupyter.out
+  2 ffff880ff9005600 ffff880ffbfb55c0 ffff880ff859df38 REG  /app/run_jupyter.out
+  3 ffff880afb3d1d00 ffff880d20eae6c0 ffff880ff59db730 SOCK UNIX
+  4 ffff880afb3d1200 ffff880d20eae540 ffff880ff59d82b0 SOCK UNIX
+  5 ffff880afb3d1a00 ffff880d20eaf380 ffff880ff59dd530 SOCK UNIX
+  6 ffff880afb3d0000 ffff880d20eaf200 ffff880036981930 SOCK UNIX
+  7 ffff880afb3d1000 ffff880d20eaf2c0 ffff88018fbef840 UNKN [eventpoll]
+  8 ffff880afb3d0b00 ffff880d20eaecc0 ffff8800369870b0 SOCK UNIX
+  9 ffff880312b4fb00 ffff88018f806240 ffff880fff4e8850 CHR  /dev/null
+ 10 ffff880afb3d1e00 ffff880d20eaeb40 ffff880fbbbfaab0 SOCK UNIX
+ 11 ffff880afb3d1400 ffff880cc2e21a40 ffff88018fbef840 UNKN [eventpoll]
+ 12 ffff880afb3d0500 ffff880cc2e21200 ffff880fbbbfe6b0 SOCK UNIX
+ 13 ffff8806cc41e000 ffff88018f806600 ffff880fff4e9598 CHR  /dev/urandom
+ 14 ffff880afb3d0300 ffff880cc2e21080 ffff880fbbbf9bb0 SOCK UNIX
+ 15 ffff8802d769a300 ffff880cc2e20f00 ffff880fbbbf91b0 SOCK TCP
+ 16 ffff8809b3b20200 ffff880cc2e20d80 ffff880fbbbfbc30 SOCK UNIX
+ 17 ffff8809b3b21000 ffff880cc2e21140 ffff880fbbbffd30 SOCK UNIX
+ 18 ffff8809b3b21500 ffff880cc2e20e40 ffff880fbbbfb230 SOCK TCP
+ 19 ffff8809b3b20400 ffff880cc2e21740 ffff880fbbbf8f30 SOCK UNIX
+ 20 ffff8809b3b21100 ffff880cc2e21800 ffff880fbbbf8030 SOCK UNIX
+ 21 ffff88096f7cb600 ffff880cc2e209c0 ffff880fbbbfc8b0 SOCK TCP
+ 22 ffff88096f7ca500 ffff880cc2e21c80 ffff880fbbbf9430 SOCK UNIX
+ 23 ffff88096f7cb100 ffff880cc2e20540 ffff880fbbbfda30 SOCK UNIX
+ 24 ffff88096f7ca200 ffff880cc2e218c0 ffff880fbbbf87b0 SOCK TCP
+ 25 ffff88096f7ca700 ffff880cc2e20b40 ffff880fba2d65c0 FIFO
+ 26 ffff88096f7cac00 ffff880cc2e20b40 ffff880fba2d65c0 FIFO
+ 27 ffff88096f7cb900 ffff880cc2e21980 ffff880fbbbfc3b0 SOCK UNIX
+ 28 ffff88096f7ca900 ffff880cc2e20900 ffff880fbbbfd7b0 SOCK UNIX
+ 29 ffff88096f7ca000 ffff880cc2e20780 ffff880fbbbf8cb0 SOCK TCP
+ 30 ffff88096f7cbb00 ffff880cc2e21500 ffff880fbbbff5b0 SOCK UNIX
+ 31 ffff88096f7cba00 ffff880cc2e206c0 ffff880fbbbf82b0 SOCK UNIX
+ 32 ffff88032c0e7b00 ffff880f1dd50cc0 ffff88003686afb0 SOCK UNIX
+ 33 ffff88032c0e7100 ffff880f1dd51200 ffff880036869930 SOCK UNIX
+ 34 ffff88032c0e7e00 ffff880f1dd50b40 ffff88018fbef840 UNKN [eventpoll]
+ 35 ffff88032c0e6200 ffff880f1dd51980 ffff88003686beb0 SOCK UNIX
+ 36 ffff8802d769bd00 ffff880f1dd51500 ffff88003686ad30 SOCK UNIX
+ 37 ffff880ff8b77700 ffff880f1dd509c0 ffff88018fbef840 UNKN [eventpoll]
+ 38 ffff880ff8b76600 ffff880f1dd512c0 ffff88003686aab0 SOCK UNIX
+ 39 ffff880ff8b77d00 ffff880f1dd50a80 ffff88003686cb30 SOCK UNIX
+ 40 ffff880ff8b77f00 ffff880f1dd50d80 ffff88003686b9b0 SOCK TCP
+ 41 ffff8802c64e4e00 ffff880ff878f140 ffff880fba2d3e70 FIFO
+ 42 ffff8802c64e5800 ffff880ff878f140 ffff880fba2d3e70 FIFO
+ 43 ffff8803810cce00 ffff880d4a5f3b00 ffff8805ba02ebf8 REG  /home/mhealy10/.ipython/profile_default/history.sqlite
+ 44 ffff880ff8b76f00 ffff880d4a5f3b00 ffff8805ba02ebf8 REG  /home/mhealy10/.ipython/profile_default/history.sqlite
+ 45 ffff880ff8b76300 ffff880f1dd51bc0 ffff88003686c130 SOCK TCP
+
+Threads of 'java' task were running with the privilege of 'root' UID (653886) & GID (210).
+
+crash> set 6226
+    PID: 6226
+COMMAND: "java"
+   TASK: ffff880d08bd8000  [THREAD_INFO: ffff880fdbb4c000]
+    CPU: 0
+  STATE: TASK_INTERRUPTIBLE
+
+crash> task_struct.cred ffff880d08bd8000
+  cred = 0xffff880444e0cc00
+
+UID and GID of 'java' task.
+
+crash> cred.uid,gid 0xffff880444e0cc00
+  uid = {
+    val = 653886
+  }
+  gid = {
+    val = 210
+  }
+
+The total number of CPUs on the system are 8 & load averages reached up to 951.
+
+crash> sys | grep -e CPUS -e LOAD
+        CPUS: 8
+LOAD AVERAGE: 951.00, 950.95, 946.58
+
+Total Numbers of Threads per State:
+
+crash> ps -S
+  RU: 608
+  IN: 2119
+  UN: 351
+  ZO: 1
+
+There are total 608 Running/Runnable State (RU) & 351 Uninterruptable State (UN)
+tasks contributing to the high load averages.
+
+List of Running/Runnable State (RU) tasks:
+
+crash> ps | grep "RU" |awk '{print $9}' | sort | uniq -c | sort -nr
+    386 java
+     78 python
+     34 jupyterhub-sing
+     18 ksh
+     17 python3.4
+      6 .vasd
+      5 ovcd
+      4 opcmsga
+      3 opcmona
+      3 docker-containe
+      2 sshd
+      2 ovbbccb
+      2 dockerd
+      2 8660
+      1 tuned
+      1 systemd-logind
+      1 systemd-journal
+      1 systemd
+      1 [swapper/7]
+      1 [swapper/6]
+      1 [swapper/5]
+      1 [swapper/4]
+      1 [swapper/3]
+      1 [swapper/2]
+      1 [swapper/1]
+      1 [swapper/0]
+      1 scopeux
+      1 rpcbind
+      1 qmgr
+      1 pickup
+      1 perfalarm
+      1 opcle
+      1 opcacta
+      1 NetworkManager
+      1 master
+      1 lsmd
+      1 [kworker/6:2]
+      1 [kworker/2:1]
+      1 [kworker/0:0]
+      1 [kthreadd]
+      1 [kswapd0]
+      1 irqbalance
+      1 gunicorn
+      1 gssproxy
+      1 fsmon
+      1 docker-proxy
+      1 docker
+      1 crond
+      1 coda
+      1 chronyd
+      1 auditd
+      1 audispd
+      1 atd
+      1 agetty
+      1 1509252
+      1 1466544
+      1 1290524
+      1 1235592
+      1 1229020
+      1 1003948
+
+All the active tasks on each CPU were trying to free memory by shrinking memory zones.
+
+crash> foreach active bt | grep -E '^ #3' | awk '{print($3)}' | sort | uniq -c | sort -nk1
+      1 try_to_free_pages
+      7 do_try_to_free_pages
+
+Notice the high number of tasks waiting in the run queue of each CPU.
+
+crash> rq.cpu,nr_running runqueues:a
+[0]: ffff880ffee16c40
+  cpu = 0
+  nr_running = 85
+[1]: ffff880ffee56c40
+  cpu = 1
+  nr_running = 6
+[2]: ffff880ffee96c40
+  cpu = 2
+  nr_running = 88
+[3]: ffff880ffeed6c40
+  cpu = 3
+  nr_running = 99
+[4]: ffff880ffef16c40
+  cpu = 4
+  nr_running = 26
+[5]: ffff880ffef56c40
+  cpu = 5
+  nr_running = 96
+[6]: ffff880ffef96c40
+  cpu = 6
+  nr_running = 107
+[7]: ffff880ffefd6c40
+  cpu = 7
+  nr_running = 93
+
+List of Uninterruptable State (UN) tasks:
+
+crash> ps | grep "UN" |awk '{print $9}' | sort | uniq -c | sort -nr
+    254 java
+     43 python
+     28 jupyterhub-sing
+      7 python3.4
+      1 [xfs-log/dm-0]
+      1 [xfsaild/dm-16]
+      1 vmtoolsd
+      1 tuned
+      1 snmpd
+      1 node
+      1 [loop0]
+      1 [kworker/7:1H]
+      1 [kworker/6:1]
+      1 [kworker/6:0H]
+      1 [kworker/5:2H]
+      1 [kworker/2:2]
+      1 [kworker/1:1H]
+      1 [kworker/0:2H]
+      1 [kworker/0:1H]
+      1 [kworker/0:0H]
+      1 jupyterhub
+      1 gunicorn
+      1 csshst
+
+Tasks blocked in Uninterruptible (UN) State were also waiting on memory reclaim.
+
+crash> foreach UN bt | awk '/#5 / { print $3,$5 }' | sort | uniq -c | sort -nr
+    339 shrink_inactive_list ffffffff81195ebf
+      7 create_worker ffffffff810a843a
+      2 xlog_cil_force_lsn ffffffffa030d6ea
+      1 kthread ffffffff810b064f
+
+Recommendations:
+****************
+1] Check for any possibility of BUG in application using 'python' and 'java' for
+   instance in the region of a memory leak.
+
+2] Limit the memory utilization of 'python' and 'java' tasks.
+
+*OR*
+
+1] Increase the physical memory to handle the current workload.
+
+Let me know if you have any questions.
+
+Regards,
+--
+Buland Singh
+Senior Software Maintenance Engineer

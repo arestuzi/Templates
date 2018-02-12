@@ -1,0 +1,69 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+根据您提供的ｓｏｓｒｅｐｏｒｔ，重启时间点，附近有大量的硬件报错
+时间点：Jul 18 12:03:14
+ 21219 Jul 15 00:57:13 msc4db1 kernel: [Hardware Error]: Machine check events logged
+ 21220 Jul 15 00:57:13 msc4db1 kernel: [Hardware Error]: Machine check events logged
+ 21221 Jul 15 00:58:13 msc4db1 kernel: __ratelimit: 18 callbacks suppressed
+ 21222 Jul 15 00:58:13 msc4db1 kernel: [Hardware Error]: Machine check events logged
+ 21223 Jul 15 00:58:13 msc4db1 kernel: [Hardware Error]: Machine check events logged
+ 21224 Jul 15 00:59:27 msc4db1 kernel: __ratelimit: 35 callbacks suppressed
+ 21225 Jul 15 00:59:27 msc4db1 kernel: [Hardware Error]: Machine check events logged
+ 21226 Jul 15 00:59:28 msc4db1 kernel: [Hardware Error]: Machine check events logged
+
+由于没有ｖｍｃｏｒｅ实际分析是否由于硬件问题导致系统宕机，　但是请先排查硬件错误。
+而且/var/log/mcelog近期有大量的硬件报错：
+CPUID Vendor Intel Family 6 Model 47
+Hardware event. This is not a software error.
+MCE 0
+CPU 30 BANK 9 
+TIME 1468901627 Tue Jul 19 04:13:47 2016
+MCG status:
+MCi status:
+Corrected error
+Error enabled
+MCA: MEMORY CONTROLLER GEN_CHANNELunspecified_ERR
+Transaction: Generic undefined request
+STATUS 900000400009008f MCGSTATUS 0
+MCGCAP 1000c18 APICID c0 SOCKETID 3 
+CPUID Vendor Intel Family 6 Model 47
+
+ｋｂａｓｅ：
+https://access.redhat.com/solutions/67599
+请联系硬件厂商，检查硬件问题。
+
+配置ｋｄｕｍｐ：
+由于您内存大于硬盘容量，有可能造成ｖｍｃｏｒｅ无法成功收集。建议修改kdump配置文件path /var/crash，更新vmcore存储路径至有效硬盘空间。　重启kdump服务使新配置生效
+收到ｖｍｃｏｒｅ后，可以确定是否由于硬件问题导致系统宕机。
+
+由于内核已经没有反映，　如果要产生vmcore 文件，　需要借助键盘或者是nmi中断触发才可以。
+
+
+建议做以下操作：
+
+vim /etc/sysctl.conf 
+
+kernel.sysrq = 1
+kernel.unknown_nmi_panic = 1
+kernel.panic_on_unrecovered_nmi = 1
+
+保存退出之后，　执行sysctl -p 使之生效。　如果出现宕机情况，　按键盘的alt+printscreen+c ，　触发内核发生panic 生成vmcore．　
+
+https://access.redhat.com/solutions/23069
+
+How to configure the HP Watchdog (hp-wdt) to trigger NMI event 
+https://access.redhat.com/solutions/1123923
+关于如何使ｎｍｉ触发kernel panic，由于各厂商之间方法不同，关于此问题，请联系硬件厂商。
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703 
+------------------------------------------------

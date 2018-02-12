@@ -1,0 +1,58 @@
+ >>> COLLABORATION REQUEST <<<
+
+Hi SBR-kernel, thanks for your attention!
+
+ENVIRONMENT:
+
+- Red Hat Enterprise 6.6
+- Kernel version 2.6.32-504
+- HW platform HP DL380 Gen9
+
+
+SPECIFICS:
+
+- Kernel panic due to stack corrupted:
+~~~
+<1>BUG: unable to handle kernel paging request at 00000000f61906a0
+<1>IP: [<ffffffff8105d834>] update_curr+0x144/0x1f0
+<4>PGD 170e9f067 PUD 3359b3067 PMD 0
+<0>Thread overran stack, or stack corrupted
+<4>Oops: 0000 [#1] SMP
+~~~
+
+- Panic task back trace:
+~~~
+
+~~~
+
+SUPPORTING DATA:
+
+Attached to Case:
+
+- sosreport(s) attached (sosreport-cnwjnmesdb01.01658389-20160701154930-4596.tar.xz)
+
+- Core on Optimus https://optimus.gsslab.rdu2.redhat.com/manager/704223166
+                        retrace-server-interact 704223166 crash
+
+
+REQUESTED ACTION:
+
+- How to do further investigation next?
+
+Please advice... Many thanks!!
+
+Best Regards,
+Terry Ji
+
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

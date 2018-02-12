@@ -1,0 +1,206 @@
+Hi Ke Yin,
+
+Apologies for the lack of explanation last comment. This is an issue with ESX - specifically scheduling in the esx layer. 
+I've reviewed the perf data which as you noted indicated largely idle CPUs. Unfortunately this is not accurate. I think 
+that the %RDY shown in the esxtop screenshot is sufficiently high to cause the small but disruptive spikes we're seeing.
+VMWare's rule of thumb is anything over 5% is definitively impacting performance. We're at 4.11. I'm less familiar with CSTP 
+but this looks concerning high as well. Additionally, I believe that esxtop lists vm's on the current host. You'll note 
+that some of the other vm's are as high as 30% RDY. This host is over-subscribed. I've detailed a longer technical description
+of why we see 'soft lockups' and high %sys/%usr on virtual machines. Unfortunately we can't tell exactly what is causing the issue 
+just that it's impacting the ESX scheduling layer. For this reason VMWare needs to be engaged. Feel free to publish anything below.  
+
+I'll leave the case WoCollab in case someone else sees something different. 
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+	Let's examine how CPU time is calculated - specifically %sys or time spent in kernel mode (system).
+	The timer interrupt handler calls update_process_times. From here we call account_process_tick. In 
+	turn the actual accounting is recorded in account_system_time.
+
+	When the timer interrupt arrives the current 'tick' is added to the current processes time. 
+	user_tick is set from the system registers (get_irq_regs) to determine if the CPU is in kernel or 
+	user mode.
+
+	1204 /*
+	1205  * Called from the timer interrupt handler to charge one tick to the current
+	1206  * process.  user_tick is 1 if the tick is user time, 0 for system.
+	1207  */
+	1208 void update_process_times(int user_tick)
+	1209 {
+	1210         struct task_struct *p = current;		## assumes current process
+	1211         int cpu = smp_processor_id();
+	1212 
+	1213         /* Note: this timer irq context must be accounted for as well. */
+[A]	1214         account_process_tick(p, user_tick);
+	1215         run_local_timers();
+	1216         rcu_check_callbacks(cpu, user_tick);
+	1217         printk_tick();
+	1218 #ifdef CONFIG_IRQ_WORK
+	1219         if (in_irq())
+	1220                 irq_work_run();
+	1221 #endif
+	1222         scheduler_tick();
+	1223         run_posix_cpu_timers(p);
+	1224 }
+
+	In this function we add 1 tick (cputime_one_jiffy) to the current process time (either kernel or user) 
+
+	 5713 /*
+	 5714  * Account a single tick of cpu time.
+	 5715  * @p: the process that the cpu time gets accounted to
+	 5716  * @user_tick: indicates if the tick is a user or a system tick
+	 5717  */
+[A]	 5718 void account_process_tick(struct task_struct *p, int user_tick)
+	 5719 {
+	 5720         cputime_t one_jiffy_scaled = cputime_to_scaled(cputime_one_jiffy);
+	 5721         struct rq *rq = this_rq();
+	 5722 
+	 5723         if (steal_account_process_tick())
+	 5724                 return;
+	 5725 
+	 5726         if (user_tick)
+[B]	 5727                 account_user_time(p, cputime_one_jiffy, one_jiffy_scaled);
+	 5728         else if ((p != rq->idle) || (irq_count() != HARDIRQ_OFFSET))
+[B]	 5729                 account_system_time(p, HARDIRQ_OFFSET, cputime_one_jiffy,  
+	 5730                                     one_jiffy_scaled);
+	 5731         else
+	 5732                 account_idle_time(cputime_one_jiffy);
+	 5733 }
+
+	Accounting is done in this function. For our purposes 'cputime' is added to the current value for a cumulative. 
+
+	 5626 /*
+[B]	 5627  * Account system cpu time to a process.
+	 5628  * @p: the process that the cpu time gets accounted to
+	 5629  * @hardirq_offset: the offset to subtract from hardirq_count()
+	 5630  * @cputime: the cpu time spent in kernel space since the last update
+	 5631  * @cputime_scaled: cputime scaled by cpu frequency
+	 5632  */
+	 5633 void account_system_time(struct task_struct *p, int hardirq_offset,
+	 5634                          cputime_t cputime, cputime_t cputime_scaled)
+
+	There is one unfortunate assumption here which does not noticeably impact physical servers. The current process 
+	and mode are blamed for the entirety of duration's between ticks. In virtual machines where the hypervisor does not 
+	explicitly inform guests of 'stolen time' this has a major potential impact.
+
+	The guest operating system may be unavailable to handle the clock interrupts around the time the container 
+	is supposed to generate it, either as a result of competition for CPU time with other virtual machines; that 
+	results in missed clock interrupts (lost ticks) and time as measured by the guest operating system falls behind 
+	real time whenever there is a timer interrupt backlog. The VMware hypervisor deals with this problem by keeping 
+	track of the (lost) clock interrupt backlog and, in order to catch up, it attempts to deliver clock interrupts at 
+	a higher rate when this backlog grows. 
+
+
+	Let's examine how Virtual Machine scheduling can explain our situation. We'll take a simple example of two 
+	vCPUs from a unique vm each and one physical core. Both vCPUs are in a Runnable state (guest is trying to 
+	run some code) for the duration of the 1 second example. vCPU1 handles work for a single process PID 5000
+	within virtual machine 1 for the duration of the 1 second.  
+
+	Virtual Machine 1 == vCPU1
+	Virtual Machine 2 == vCPU2
+
+                                    tick flood
+vCPU1                                   |  
+Ticks   |||||||||||||||||               |||||||||||||||||
+	0	    	0.33		0.66		1		
+	<-------------Time on Physical core------------->
+	|	vCPU1	|	vCPU2	|	vCPU1	|
+	A	   	B		C		D	
+	     PID 5000			     PID 5000			
+
+	Event A: vCPU1 is scheduled on physical core
+	Event B: vCPU1 is preempted by vCPU2. vCPU1 is no longer executing code. It is still in R-state. The guest OS overlaying vCPU1 is not aware of this event.
+	Event B: at the time of this event PID 5000 is executing in kernel mode. 
+	Event C: vCPU1 is active on the core again. Code execution progresses. 
+	Event C: vCPU1 receives a flood of ticks. This ticks account the 'preempted' .33 seconds as PID 5000 %sys.
+
+	In this scenario the guest scheduler (work represented by vCPU1) sees a run duration of 1 second, Event A to Event D. The 
+	flood of ticks at event C causes our CPU accounting to record the missed .33 seconds as kernel mode (or user) for PID 5000 
+	(current). However it has only accomplished .66 seconds of work on a processor. This example is simple vCPU over-subscription. 
+	Replace	vCPU2 with any other type of work that the ESX scheduler must handle and we have a number of potential root causes. 
+
+
+There are two symptoms these machines are showing which are highly dependent on accurate timekeeping (ticks), soft lockups and erratic CPU 
+accounting (usr/sys). We can also observe that the soft lockups here are not in code paths that are related. It's highly unlikely these are 
+actually excessive execution in kernel mode. 
+
+
+	Jan  1 03:52:47 vm-vmw85819-app kernel: BUG: soft lockup - CPU#0 stuck for 61s! [java:19318]
+	Jan  1 03:52:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#6 stuck for 61s! [HOST_GW:110897]
+	Jan  1 03:52:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#3 stuck for 70s! [HOST_GW:110831]
+	Jan  1 03:52:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#1 stuck for 73s! [SIH_OUTPROCESS:70315]
+	Jan  1 03:52:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#2 stuck for 79s! [vmmemctl:661]
+	Jan  1 03:52:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#5 stuck for 71s! [HOST_GW:110623]
+	Jan  1 03:52:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#7 stuck for 74s! [HOST_GW:110834]
+
+	Jan  3 07:37:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#2 stuck for 62s! [HOST_GW:111019]
+	Jan  3 07:37:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#1 stuck for 63s! [rtkit-daemon:2144]
+	Jan  3 07:37:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#0 stuck for 63s! [bdi-default:49]
+	Jan  3 07:37:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#3 stuck for 67s! [HOST_GW:110639]
+	Jan  3 07:37:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#7 stuck for 66s! [HOST_GW:110778]
+	Jan  3 07:37:48 vm-vmw85819-app kernel: BUG: soft lockup - CPU#6 stuck for 67s! [java:7248]
+	Jan  3 07:37:52 vm-vmw85819-app kernel: BUG: soft lockup - CPU#4 stuck for 96s! [vmmemctl:661]
+	Jan  3 07:37:53 vm-vmw85819-app kernel: BUG: soft lockup - CPU#5 stuck for 96s! [HOST_GW:111045]
+
+Jan 3 lockups; when we examine CPU activity we see that both user and sys spike together. These two symptoms are highly suggestive 
+of a CPU deprivation of this guest due to problems with scheduling on the host. 
+
+	07:10:01 AM     CPU      %usr     %nice      %sys   %iowait    %steal      %irq     %soft    %guest     %idle
+	07:20:01 AM     all      1.52      0.00      0.69      0.02      0.00      0.00      0.03      0.00     97.74
+	07:30:01 AM     all      0.95      0.00      0.60      0.02      0.00      0.00      0.01      0.00     98.41
+	07:40:02 AM     all      2.40      0.00      1.59      0.02      0.00      0.00      0.14      0.00     95.85
+	07:50:04 AM     all      1.81      0.00      1.96      0.19      0.00      0.00      0.06      0.00     95.99
+	08:00:02 AM     all      1.96      0.00      2.81      0.35      0.00      0.00      0.05      0.00     94.82
+	08:10:27 AM     all      6.19      0.00      9.54      0.59      0.00      0.00      0.27      0.00     83.41
+	08:20:07 AM     all      2.96      0.00      3.14      0.97      0.00      0.00      0.15      0.00     92.78
+	08:30:01 AM     all      2.02      0.00      1.72      0.54      0.00      0.00      0.07      0.00     95.64
+	08:40:01 AM     all      2.82      0.00      2.17      0.50      0.00      0.00      0.11      0.00     94.39
+
+
+The perf details seemingly normal activity on a mostly idle set of CPUs.
+
+$ perf report -i perf.data.0120035703 --stdio --sort overhead_sys,symbol --show-cpu-utilization 2>/dev/null | head -50
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 22K of event 'cpu-clock'
+# Event count (approx.): 22425
+#
+# Children      Self       sys       usr  Symbol                                       
+# ........  ........  ........  ........  .............................................
+#
+    83.33%    83.33%    83.33%     0.00%  [k] native_safe_halt                         
+            |
+            ---native_safe_halt
+
+    11.89%     0.63%     0.00%     0.63%  [.] __poll                                   
+            |
+            ---__poll
+               |          
+               |--1.33%-- _spin_unlock_irqrestore
+               |          
+               |--0.93%-- select_estimate_accuracy
+               |          
+               |--0.85%-- datagram_poll
+               |          
+               |--0.72%-- system_call_after_swapgs
+               |          
+               |--0.71%-- do_sys_poll
+               |          
+               |--0.63%-- _spin_lock_bh
+               |          
+               |--0.62%-- local_bh_enable_ip
+               |          
+               |--0.48%-- fput
+               |          
+               |--0.46%-- native_read_tsc
+               |          
+               |--0.42%-- __pollwait
+               |          
+               |--0.41%-- ktime_get_ts
+               |          
+               |--0.30%-- fget_light
+               |          
+               |--0.28%-- __audit_syscall_exit

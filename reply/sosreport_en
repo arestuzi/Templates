@@ -1,0 +1,14 @@
+Hello!
+
+Thank you for contacting Red Hat!
+
+
+Please provide the sosreport for further analysis
+
+1. open a terminal, login as root and type sosreport -a。
+2. After the collection, a compress file will be generated under /tmp/，please upload the file to the case(via the customer portal)
+
+Best regards,
+Terry Ji RHCA
+Technical Support Engineer
+Red Hat Global Support Services

@@ -1,0 +1,55 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+1.系统于Feb 12 19:25:47 异常重启。重启前无报错日志。
+ Feb 12 19:10:01 crmint-h07 systemd: Starting Session 828 of user root.
+ Feb 12 19:10:01 crmint-h07 systemd: Started Session 828 of user root.
+ Feb 12 19:25:47 crmint-h07 rsyslogd: [origin software="rsyslogd" swVersion="7.4.7" x-pid="1576" x-info="http://www.rsyslog.com"] start
+
+2. 根据电话沟通，/var/crash目录下无vmcore文件生成.
+
+3. 如下HP的模块加载至当前内核：
+hpwdt                  14242  0 <--- HP watchdog
+hpilo                  17381  0
+hpsa                   89274  2
+
+有可能是硬件watchdog检测到系统异常重启的操作系统，相关文档：
+Why does HP server reboot or shutdown unexpectedly?
+https://access.redhat.com/solutions/3003
+
+另外请联系HP查看hpwdt是否需要进行如下设置，检测到系统异常会触发kernel panic,kdump服务会收集vmcore，进行进一步分析。相关文档：
+How to enable allow_kdump parameter in hpwdt module for Red Hat Enterprise Linux 6?
+https://access.redhat.com/solutions/452983
+How to configure the HP Watchdog (hp-wdt) to trigger NMI event
+https://access.redhat.com/solutions/1123923
+
+最后，您在创建此问题单的时候指定的问题严重级别是<２>，根据红帽支持严重级别的定义，严重级别<２>指的是<软件可以正常运行，但您在生产环境中的使用被严重削弱的问题。这种情况对您的业务运作有高度影响，也不存在其他可绕过问题的解决方法。>。而此问题单中的问题应该是严重级别<３>。关于红帽支持严重级别的定义，请参考如下的链接：
+
+https://access.redhat.com/support/policy/severity/
+
+改为３级后，仍然会优先处理此问题单。　下次回复时，如果您没有提及关于此问题单的严重级别话，请允许我们将问题单的严重级别调整为合适的值，请您理解。
+
+备注：
+严重级别 1（紧急）
+在生产环境中严重影响您软件使用的问题（如生产数据丢失或生产系统不能正常运行）。这种情况使您的业务运作暂停，也不存在其他可绕过问题的解决方法。
+
+严重级别 2（高）
+软件可以正常运行，但您在生产环境中的使用被严重削弱的问题。这种情况对您的业务运作有高度影响，也不存在其他可绕过问题的解决方法。
+
+严重级别 3（中）
+涉及生产环境或开发环境中软件部分的使用、非关键损失的问题。在生产环境中，对您的业务有中低级影响，但是业务仍可正常运作，包括使用其他可绕过问题的解决方法。对于开发环境，这种情况使您的项目无法再继续或迁移至生产。
+
+严重级别 4（低）
+一般使用问题，报告文档错误或未来产品增强或修改建议。在生产环境中，对您的业务或系统的性能或功能影响较低或没有影响。在开发环境中，对您的业务有中低级影响，但是业务仍可正常运作，包括使用其他可绕过问题的解决方法。
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

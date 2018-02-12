@@ -1,0 +1,30 @@
+Run below script while facing the high CPU utilization issue, it will capture important performance outputs and will bundle
+them into '/tmp/performance-data' directory.
+
+#!/bin/bash
+# Run this script when system is not performing well e.g.:
+#
+# ./perf-script 2 120
+#
+# Wait for the script to finish and attach /tmp/performance-data.tar.bz2
+# to the support case afterwards.
+
+File=$(date "+%d-%h-%Y-%H-%M-%S")
+dir=/tmp/performance-data
+
+if [ ! -d $dir ]; then
+    mkdir $dir
+fi
+vmstat $1 $2 > $dir/vmstat-$File &
+top -b -n $2 -d $1 > $dir/top-$File &
+iostat -t -x $1 $2 > $dir/iostat-$File &
+sar -A $1 $2 > $dir/sar-$File &
+ps aux > $dir/ps-$File
+ps auxH > $dir/psH-$File
+
+sleep $(($1 * $2))
+
+tar cjf $dir.tar.bz2 $dir &> /dev/null
+
+#CPU consuming Process
+# ps -auxwww | awk '{print $2, $3, $11}' | sort -k2rn | head -n 10

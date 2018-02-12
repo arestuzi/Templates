@@ -1,0 +1,6 @@
+<Kenneth> %rdi %edi - 1st argument
+<Kenneth> %rsi %esi - 2nd argument
+<Kenneth> %rdx %edx - 3rd argument
+<Kenneth> %rcx %ecx - 4th argument
+<Kenneth> %r8  %r8d - 5th argument
+<Kenneth> %r9  %r9d - 6th argument

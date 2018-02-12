@@ -1,0 +1,101 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+通过分析vmcore文件，确认系统宕机原因是由于PANIC: "divide error: 0000 [#1] SMP "
+简单来说，程序运行时,转换到汇编层面做运算时，由于bug导致%rcx寄存器值为0，在做除法运算时，分母为0，内核检测到此bug，引发kernel panic，造成宕机。
+
+解决方案：
+升级内核至版本kernel-3.10.0-229.20.1.el7解决此问题。 下属kbase中，有三种内核升级方案，如果想保持RHEL7.1版本不变，建议升级至
+kernel-3.10.0-229.20.1.el7
+
+相关kbase:
+https://access.redhat.com/solutions/1471663
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+分析过程：
+crash> sys
+      KERNEL: /cores/retrace/repos/kernel/x86_64/usr/lib/debug/lib/modules/3.10.0-229.el7.x86_64/vmlinux
+    DUMPFILE: /cores/retrace/tasks/718033128/crash/vmcore  [PARTIAL DUMP]
+        CPUS: 24
+        DATE: Tue Sep  6 01:26:31 2016
+      UPTIME: 217 days, 19:58:23
+LOAD AVERAGE: 0.02, 0.02, 0.05
+       TASKS: 449
+    NODENAME: hlwntp2
+     RELEASE: 3.10.0-229.el7.x86_64
+     VERSION: #1 SMP Thu Jan 29 18:37:38 EST 2015
+     MACHINE: x86_64  (2000 Mhz)
+      MEMORY: 32 GB
+       PANIC: "divide error: 0000 [#1] SMP "
+
+crash> sys | grep -e RELEASE -e PANIC
+     RELEASE: 3.10.0-229.el7.x86_64
+       PANIC: "divide error: 0000 [#1] SMP "
+crash> log | grep DMI:
+[    0.000000] DMI: IBM System x3650 M4 -[7915IIU]-/00J6528, BIOS -[VVE116AUS-1.10]- 06/20/2012
+
+crash> set -p
+    PID: 0
+COMMAND: "swapper/1"
+   TASK: ffff880469f096c0  (1 of 24)  [THREAD_INFO: ffff880469f18000]
+    CPU: 1
+  STATE: TASK_RUNNING (PANIC)
+
+crash> bt
+PID: 0      TASK: ffff880469f096c0  CPU: 1   COMMAND: "swapper/1"
+ #0 [ffff88046fc23a78] machine_kexec at ffffffff8104c4cb
+ #1 [ffff88046fc23ad8] crash_kexec at ffffffff810e1fe2
+ #2 [ffff88046fc23ba8] oops_end at ffffffff8160c588
+ #3 [ffff88046fc23bd0] die at ffffffff8101736b
+ #4 [ffff88046fc23c00] do_trap at ffffffff8160bc60
+ #5 [ffff88046fc23c50] do_divide_error at ffffffff81013f1e
+ #6 [ffff88046fc23d00] divide_error at ffffffff8161544e
+    [exception RIP: intel_pstate_timer_func+377]
+    RIP: ffffffff814a9289  RSP: ffff88046fc23db8  RFLAGS: 00010206
+    RAX: 0000000027100000  RBX: ffff880868bcbd00  RCX: 0000000000000000   <----- %rcx寄存器值
+    RDX: 0000000000000000  RSI: 0000000000000010  RDI: 000000002e536280
+    RBP: ffff88046fc23e20   R8: 0042dd54709975c0   R9: ffff880469fac001
+    R10: 0000000000000002  R11: 0000000000000005  R12: 0000000000004500
+    R13: 0000000000271000  R14: 0000000000004500  R15: 0000000000000246
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+ #7 [ffff88046fc23e28] call_timer_fn at ffffffff8107df56
+ #8 [ffff88046fc23e60] run_timer_softirq at ffffffff8107fdcf
+ #9 [ffff88046fc23ed8] __do_softirq at ffffffff81077b2f
+#10 [ffff88046fc23f48] call_softirq at ffffffff816156dc
+#11 [ffff88046fc23f60] do_softirq at ffffffff81015d95
+#12 [ffff88046fc23f80] irq_exit at ffffffff81077ec5
+#13 [ffff88046fc23f98] smp_apic_timer_interrupt at ffffffff81616355
+#14 [ffff88046fc23fb0] apic_timer_interrupt at ffffffff81614a1d
+--- <IRQ stack> ---
+#15 [ffff880469f1bd98] apic_timer_interrupt at ffffffff81614a1d
+    [exception RIP: cpuidle_enter_state+79]
+    RIP: ffffffff814a9c3f  RSP: ffff880469f1be48  RFLAGS: 00000206
+    RAX: 0042dd54709cac35  RBX: 0000000200000001  RCX: 0000000000000017
+    RDX: 0000000225c17d03  RSI: ffff880469f1bfd8  RDI: 0042dd54709cac35
+    RBP: ffff880469f1be70   R8: 00000000001eaad0   R9: 0000000000000018
+    R10: 000000000030194a  R11: ffffea000ec70280  R12: 0042dd54709975c0
+    R13: 0000000000000000  R14: ffff880400000001  R15: 0042dd54709975c0
+    ORIG_RAX: ffffffffffffff10  CS: 0010  SS: 0018
+#16 [ffff880469f1be78] cpuidle_idle_call at ffffffff814a9d75
+#17 [ffff880469f1beb8] arch_cpu_idle at ffffffff8101d14e
+#18 [ffff880469f1bec8] cpu_startup_entry at ffffffff810c67d1
+#19 [ffff880469f1bf28] start_secondary at ffffffff8104228a
+
+crash> dis -rl intel_pstate_timer_func+377 | tail -n 5
+/usr/src/debug/kernel-3.10.0-229.el7/linux-3.10.0-229.el7.x86_64/include/linux/math64.h: 29
+0xffffffff814a9284 <intel_pstate_timer_func+372>:	movslq %edx,%rcx
+/usr/src/debug/kernel-3.10.0-229.el7/linux-3.10.0-229.el7.x86_64/include/linux/math64.h: 30
+0xffffffff814a9287 <intel_pstate_timer_func+375>:	cqto   
+0xffffffff814a9289 <intel_pstate_timer_func+377>:	idiv   %rcx   <--- 进行除法运算，由于%rcx值为0，造成系统异常。 除法运算中，分母不能为0
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703 
+------------------------------------------------

@@ -1,0 +1,48 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+1、我现在监控物理内存的剩余量时，到底是直接取MEM: 行的free值，还是-/+ buffers/cache: 的free值（目前我使用后者）？有些帖子是直接取的前者。
+MEM: 行的free值，不能正确反映内存负载。因为Linux设计之出就是要最大化内存的使用率，随着系统运行时间的增长，cache的增多，会导致此值更接近于物理内存总大小。但是如果page cache很多，大部分page cache均可以被释放。所以MEM: 行的free值很大，不一定会触发oom.
+
+-/+ buffers/cache: 的free值, 也就是减掉了cached和buffers的可用内存大小。
+但是要注意，cached一列中包含share memory和slab cache。
+其中share memory在内存紧缺时不会像page cache一样直接被系统丢弃，而是需要被写入swap空间。对应/proc/meminfo中Shmem.
+可被释放的slab cache在/proc/meminfo中为SReclaimable。
+
+您需要同时观察此系统上述提到的两个值占总cache的大小是多少。再加上-/+ buffers/cache: 的free值，可以预估出系统活动内存是多少。
+-/+ buffers/cache: 的free值 + Shmem + SReclaimable
+
+2、应用程序被oom kill的时候，是不是当buffers和cached空间无法释放，而且-/+ buffers/cache:中的free也不足时，触发？
+系统在触发oom之前，会先触发一系列函数，遵循页框回收算法先回收内存，但是最后回收的内存满足不了新内存的申请的时候，才会触发oom.  系统会分为许多个zone，每个zone都会有min low high，三个水线，内存可用量低于low水线时，会触发__alloc_pages()内核函数开始做内存回收。
+查看/proc/zoneinfo会返回各个zone水线值
+
+3、需不需要刻意监控，swap in和swap out，目前只监控swap空间的剩余？
+建议您监控swap in 和swap out，有些情况下，即使swap空间可用量不足，也不能就说明内存存在很大压力。
+比如应用在启动时申请了大量的匿名页，随后应用不再需要这些内存页，但是也没有调用函数释放。经过一段时间之后内核会把这些内存页交换至swap。
+swap in和swap out可能说明，当时系统可用内存不足，需要把一部分匿名页和共享内存交换至swap，但是应用马上又需要用到这些内存页，所以还需要马上交换回来。
+
+相关文档:
+Swap usage is at 100% and need to find out what processes are using swap and reduce swap usage
+https://access.redhat.com/solutions/33375
+Why does my system utilize swap space instead of freeing up cache and buffer memory?
+https://access.redhat.com/solutions/3367
+Interpreting /proc/meminfo and free output for Red Hat Enterprise Linux 5, 6 and 7
+https://access.redhat.com/solutions/406773
+Memory management and tuning options in Red Hat Enterprise Linux.
+https://access.redhat.com/solutions/16995
+What are the different zone watermarks in Red Hat Enterprise Linux ?
+https://access.redhat.com/solutions/441263
+ All about "min_free_kbytes" parameter
+https://access.redhat.com/solutions/336033
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

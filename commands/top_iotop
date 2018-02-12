@@ -1,0 +1,7 @@
+<xyin> iostat -x 2 50 | tee -a iostat.out
+<xyin> vmstat 2 50 | tee -a vmstat.out
+<xyin> top -b -d 5 -n 10 | tee -a top.out
+<xyin> iotop -bot | tee -a iotop.out
+
+ps -eo pmem,rss,pid,cmd | sort -k 1 -nr | tee -a ps.output
+18675552572 Mr. yang

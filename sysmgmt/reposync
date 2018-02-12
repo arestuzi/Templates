@@ -1,0 +1,13 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+1. 在可以连接至外网的测试环境，注册至红帽RHN网络：
+https://access.redhat.com/labs/registrationassistant/?intcmp=hp|a|a2|regassist&#/
+
+2. yum repolist可以看到repo id
+
+3. 使用reposync命令下载软件库至本地。reposync添加-n参数只下载最新的软件包以及依赖关系。
+https://access.redhat.com/solutions/9892
+
+４. 搭建本地yum源
+https://access.redhat.com/solutions/7227

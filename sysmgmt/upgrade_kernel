@@ -1,0 +1,43 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+可以链接至外网的升级方法：
+1. 注册至红帽RHN网络：
+https://access.redhat.com/labs/registrationassistant/?intcmp=hp|a|a2|regassist&#/
+
+2. 通过yum升级
+# yum update kernel 升级内核至最新版本
+或者
+# yum update kernel-2.6.32-220.13.1.el6 升级至指定版本
+
+不可链接至外网的方法：
+1. 使用光盘镜像搭建本地yum源进行升级。
+https://access.redhat.com/solutions/7227
+2. yum update kernel
+
+如果想保持大版本号不变，也可从客户门户网站下载kernel rpm包进行升级。相关文档：
+https://access.redhat.com/solutions/184433
+
+kernel-2.6.32-220.13.1.el6下载链接：
+https://access.redhat.com/downloads/content/rhel---6/x86_64/168/kernel/2.6.32-220.13.1.el6/x86_64/fd431d51/package
+
+升级命令：
+# rpm -ivh kernel-2.6.32-220.13.1.el6
+
+建议：
+如果可能，建议您使用最新的光盘镜像把内核版本升级至最新。因为您即使修复了此bug，您当前的系统还有可能遇到以下bug，例如：
+https://access.redhat.com/solutions/433883
+
+内核及其他软件均为向下兼容，但是保险起见，还是需要您在测试环境测试后再更新生产环境。升级完成后，会保留当前正在使用的内核，如果升级后系统出现异常，可以使用旧内核启动。
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

@@ -1,0 +1,26 @@
+ORIGINAL ENVIRONMENT
+1. RHEL6.9
+2. satellite 6.2.10
+
+GOAL
+1. upgrade satellite 6.2.xx to satellite 6.3.x
+2. upgrade capsule 6.2.xx to capsule 6.3.x
+
+PROCEDURE
+1. upgrade satellite to the latest
+  1.1 make sure rhel-6-server-rpms rhel-server-rhscl-6-rpms and rhel-6-server-satellite-6.2-rpms is enabled.
+      # subscription-manager repos --enable=rhel-6-server-rpms \
+        --enable=rhel-server-rhscl-6-rpms \
+        --enable=rhel-6-server-satellite-6.2-rpms
+      # subscription-manager repos --list-enabled | grep "Repo ID"
+      Repo ID:   rhel-6-server-satellite-6.2-rpms
+      Repo ID:   rhel-server-rhscl-6-rpms
+      Repo ID:   rhel-6-server-rpms
+      # yum update
+      # reboot
+  1.2 upgrade satellite
+      # satellite-installer --scenario satellite --upgrade
+2. update repositories for capsule upgrade
+    2.1 repositories we need for capsule upgrade
+        Red Hat Enterprise Linux 6 Server RPMs x86_64 6Server(rhel-6-server-rpms)
+        Red Hat Software Collections RPMs for Red Hat Enterprise Linux 6 Server x86_64 6Server (rhel-server-rhscl-6-rpms)

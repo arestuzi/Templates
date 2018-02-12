@@ -1,0 +1,105 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+vmcore分析：
+crash> sys
+      KERNEL: /cores/retrace/repos/kernel/x86_64/usr/lib/debug/lib/modules/2.6.32-220.el6.x86_64/vmlinux
+    DUMPFILE: /cores/retrace/tasks/515849847/crash/vmcore  [PARTIAL DUMP]
+        CPUS: 24
+        DATE: Thu Jul 28 12:45:40 2016
+      UPTIME: 377 days, 12:49:09
+LOAD AVERAGE: 0.08, 0.13, 0.10
+       TASKS: 3620
+    NODENAME: SBM-AG-EMS1
+     RELEASE: 2.6.32-220.el6.x86_64
+     VERSION: #1 SMP Wed Nov 9 08:03:13 EST 2011
+     MACHINE: x86_64  (2666 Mhz)
+      MEMORY: 24 GB
+       PANIC: "divide error: 0000 [#1] SMP "
+
+crash> log | grep "RIP:" | grep find_busiest_group
+RIP: 0010:[<ffffffff81054ad5>]  [<ffffffff81054ad5>] find_busiest_group+0x5c5/0xb20
+crash> log | grep "Pid:"
+Pid: 0, comm: swapper Tainted: P           ----------------   2.6.32-220.el6.x86_64 #1 IBM System x3650 M3 -[7945XDS]-/00D4062
+crash> bt
+PID: 0      TASK: ffff880677c69580  CPU: 22  COMMAND: "swapper"
+ #0 [ffff88038ad438f0] machine_kexec at ffffffff81031fcb
+ #1 [ffff88038ad43950] crash_kexec at ffffffff810b8f72
+ #2 [ffff88038ad43a20] oops_end at ffffffff814f04b0
+ #3 [ffff88038ad43a50] die at ffffffff8100f26b
+ #4 [ffff88038ad43a80] do_trap at ffffffff814efda4
+ #5 [ffff88038ad43ae0] do_divide_error at ffffffff8100cfff
+ #6 [ffff88038ad43b80] divide_error at ffffffff8100be7b
+    [exception RIP: find_busiest_group+1477]
+    RIP: ffffffff81054ad5  RSP: ffff88038ad43c30  RFLAGS: 00010246
+    RAX: 0000000000000000  RBX: ffff88038ad43e54  RCX: 0000000000000000
+    RDX: 0000000000000000  RSI: ffff88038ad4f540  RDI: ffff88038ad55fc0
+    RBP: ffff88038ad43dc0   R8: ffff88038ad4f860   R9: 0000000000000000
+    R10: 0000000000000000  R11: 0000000000000001  R12: 00000000ffffff01
+    R13: 0000000000015fc0  R14: ffffffffffffffff  R15: 0000000000000000
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+ #7 [ffff88038ad43dc8] rebalance_domains at ffffffff8105fc52
+ #8 [ffff88038ad43e98] run_rebalance_domains at ffffffff810600ac
+ #9 [ffff88038ad43ed8] __do_softirq at ffffffff81072161
+#10 [ffff88038ad43f48] call_softirq at ffffffff8100c24c
+#11 [ffff88038ad43f60] do_softirq at ffffffff8100de85
+#12 [ffff88038ad43f80] irq_exit at ffffffff81071f45
+#13 [ffff88038ad43f90] smp_apic_timer_interrupt at ffffffff814f4e00
+#14 [ffff88038ad43fb0] apic_timer_interrupt at ffffffff8100bc13
+--- <IRQ stack> ---
+#15 [ffff8803783e9db8] apic_timer_interrupt at ffffffff8100bc13
+    [exception RIP: intel_idle+222]
+    RIP: ffffffff812c4a6e  RSP: ffff8803783e9e68  RFLAGS: 00000206
+    RAX: 0000000000000000  RBX: ffff8803783e9ed8  RCX: 0000000000000000    <--- %rcx 寄存器的值为0
+    RDX: 0000000000000400  RSI: 0000000000000000  RDI: 00000000000fa0e9
+    RBP: ffffffff8100bc0e   R8: 0000000000000003   R9: 0000000000000320
+    R10: 0000000000000000  R11: 0000000000000000  R12: ffffffff810096f0
+    R13: ffff8803783e9e28  R14: ffff88038ad56028  R15: ffff8801b3ddc078
+    ORIG_RAX: ffffffffffffff10  CS: 0010  SS: 0018
+#16 [ffff8803783e9ee0] cpuidle_idle_call at ffffffff813f9f67
+#17 [ffff8803783e9f00] cpu_idle at ffffffff81009e06
+crash> dis -lr find_busiest_group+1477 | tail -n 20
+0xffffffff81054aa0 <find_busiest_group+1424>:	mov    -0x170(%rbp),%r8
+/usr/src/debug/kernel-2.6.32-220.el6/linux-2.6.32-220.el6.x86_64/kernel/sched.c: 3830
+0xffffffff81054aa7 <find_busiest_group+1431>:	imul   %rax,%rdx
+/usr/src/debug/kernel-2.6.32-220.el6/linux-2.6.32-220.el6.x86_64/kernel/sched.c: 3833
+0xffffffff81054aab <find_busiest_group+1435>:	mov    $0x1,%eax
+/usr/src/debug/kernel-2.6.32-220.el6/linux-2.6.32-220.el6.x86_64/kernel/sched.c: 3831
+0xffffffff81054ab0 <find_busiest_group+1440>:	shr    $0xa,%rdx
+/usr/src/debug/kernel-2.6.32-220.el6/linux-2.6.32-220.el6.x86_64/kernel/sched.c: 3833
+0xffffffff81054ab4 <find_busiest_group+1444>:	test   %rdx,%rdx
+0xffffffff81054ab7 <find_busiest_group+1447>:	cmovne %edx,%eax
+/usr/src/debug/kernel-2.6.32-220.el6/linux-2.6.32-220.el6.x86_64/kernel/sched.c: 3836
+0xffffffff81054aba <find_busiest_group+1450>:	mov    %eax,0x8(%r8)
+0xffffffff81054abe <find_busiest_group+1454>:	xchg   %ax,%ax
+/usr/src/debug/kernel-2.6.32-220.el6/linux-2.6.32-220.el6.x86_64/kernel/sched.c: 3960
+0xffffffff81054ac0 <find_busiest_group+1456>:	mov    -0x120(%rbp),%r8
+0xffffffff81054ac7 <find_busiest_group+1463>:	mov    -0x58(%rbp),%rax
+0xffffffff81054acb <find_busiest_group+1467>:	xor    %edx,%edx
+0xffffffff81054acd <find_busiest_group+1469>:	mov    0x8(%r8),%ecx
+0xffffffff81054ad1 <find_busiest_group+1473>:	shl    $0xa,%rax
+0xffffffff81054ad5 <find_busiest_group+1477>:	div    %rcx     <---- 除以%rcx，但是分母为0，系统抛出错误
+
+请更新内核版本至kernel-2.6.32-279.el6解决此问题。
+相关kbase:
+https://access.redhat.com/solutions/58609
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+而且， 根据vmcore中显示的cpu信息：
+crash> cpuinfo_x86.x86_model_id boot_cpu_data
+  x86_model_id = "Intel(R) Xeon(R) CPU           X5650  @ 2.67GHz\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+
+并不属于208.5天bug中包含的cpu型号
+相关kbase:
+https://access.redhat.com/solutions/433883
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703 
+------------------------------------------------

@@ -1,0 +1,118 @@
+The analysis of kernel crash dump shows that this system is *hitting* a known bug #1126228[1]
+described in the following article.
+
+Refer: Setting vm.swappiness=0 on RHEL 6.4 - 6.7 can cause OOM conditions. 
+https://access.redhat.com/solutions/1149413
+
+Here's an excerpt from the analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: ngcrmapp7
+     RELEASE: 2.6.32-358.el6.ppc64
+       PANIC: "Kernel panic - not syncing: Out of memory: system-wide panic_on_oom is enabled"
+
+crash> sysctl_panic_on_oom
+sysctl_panic_on_oom = $1 = 1
+
+NUMA node information:
+
+crash> nr_online_nodes
+nr_online_nodes = $2 = 2
+
+DMA zone information of Node 0:
+
+crash> p -d node_data[0].node_zones[ZONE_DMA].vm_stat[NR_FREE_PAGES]
+$3 = {
+  counter = 156817
+}
+
+crash> p -d node_data[0].node_zones[ZONE_DMA].watermark[WMARK_MIN]
+$4 = 156872
+
+crash> p -d node_data[0].node_zones[ZONE_DMA].watermark[WMARK_LOW]
+$5 = 196090
+
+crash> p -d node_data[0].node_zones[ZONE_DMA].watermark[WMARK_HIGH]
+$6 = 235308
+
+[*] NR_FREE_PAGES is below the WMARK_MIN in ZONE_DMA of Node 0.
+[*] NR_FREE_PAGES is below the WMARK_LOW in ZONE_DMA of Node 0.
+
+DMA zone information of Node 1:
+
+crash> p -d node_data[1].node_zones[ZONE_DMA].vm_stat[NR_FREE_PAGES]
+$7 = {
+  counter = 155714
+}
+
+crash> p -d node_data[1].node_zones[ZONE_DMA].watermark[WMARK_MIN]
+$8 = 155627
+
+crash> p -d node_data[1].node_zones[ZONE_DMA].watermark[WMARK_LOW]
+$9 = 194533
+
+crash> p -d node_data[1].node_zones[ZONE_DMA].watermark[WMARK_HIGH]
+$10 = 233440
+
+[*] NR_FREE_PAGES is above the WMARK_MIN in ZONE_DMA of Node 0.
+[*] NR_FREE_PAGES is below the WMARK_LOW in ZONE_DMA of Node 0.
+
+System Memory Usage:
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  2014928       123 GB         ----
+         FREE   312531      19.1 GB   15% of TOTAL MEM
+         USED  1702397     103.9 GB   84% of TOTAL MEM
+       SHARED   136031       8.3 GB    6% of TOTAL MEM
+      BUFFERS     1258      78.6 MB    0% of TOTAL MEM
+       CACHED    14034     877.1 MB    0% of TOTAL MEM
+         SLAB   289378      17.7 GB   14% of TOTAL MEM
+
+   TOTAL SWAP   524286        32 GB         ----
+    SWAP USED    10366     647.9 MB    1% of TOTAL SWAP
+    SWAP FREE   513920      31.4 GB   98% of TOTAL SWAP
+
+ COMMIT LIMIT  1531750      93.5 GB         ----
+    COMMITTED   170997      10.4 GB   11% of TOTAL LIMIT
+
+[*] ~19 GiB of the total physical memory was free.
+[*] ~31 GiB of the total swap was free.
+
+The value of sysctl parameter 'vm.swappiness' is set to 0.
+
+crash> vm_swappiness
+vm_swappiness = $4 = 0
+
+The bug BZ#1126228[1] is a side effect of RHEL-6/Linus commit: 5edf45/fe35004[2]
+
+RHEL-6/Linus commit: 5edf45/fe35004[2] was implemented in the kernel to allow vm.swappiness to 
+be set to 0. This was to avoid a situation where when  set to 0 in previous releases, it would 
+still swap. The change was to ensure that no swapping would occur.
+
+The problem is, when memory is low but not exhausted, this change can  cause the kernel to not 
+find pages to free up in the zones even though many free pages exist. consequently,  tasks can 
+experience Out Of Memory (OOM) conditions.
+
+Resolution:
+***********
+The fix of bug #1126228[1] was released via errata: RHSA-2016-0855
+
+ o Errata Link  : https://rhn.redhat.com/errata/RHSA-2016-0855.html
+ o Package Name : kernel-2.6.32-642.el6.ppc64.rpm
+
+Workaround:
+***********
+Setting the value of sysctl parameter 'vm.swappiness' to 1 can workaround this issue.
+
+Eg:
+# vim /etc/sysctl.conf
+vm.swappiness=1
+
+# sysctl -p
+
+Recommendation:
+***************
+Upgrade the kernel package to version '2.6.32-642.el6' or higher.

@@ -1,0 +1,104 @@
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: xwyscappa
+     RELEASE: 2.6.32-431.el6.x86_64
+       PANIC: ""
+
+crash> log | grep DMI:
+DMI: VMware, Inc. VMware Virtual Platform/440BX Desktop Reference Platform, BIOS 6.00 07/30/2013
+
+Load average was normal.
+
+crash> sys | grep -e CPUS -e LOAD
+        CPUS: 8
+LOAD AVERAGE: 0.00, 0.00, 0.00
+
+None of the tasks were in Uninterruptable State (UN).
+
+Total Numbers of Threads per State:
+
+crash> ps -S
+  RU: 10
+  IN: 1287
+
+The overall system memory usage was normal.
+
+System memory usage statistics:
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  4083942      15.6 GB         ----
+         FREE  2634962      10.1 GB   64% of TOTAL MEM
+         USED  1448980       5.5 GB   35% of TOTAL MEM
+       SHARED   575745       2.2 GB   14% of TOTAL MEM
+      BUFFERS    57252     223.6 MB    1% of TOTAL MEM
+       CACHED   884863       3.4 GB   21% of TOTAL MEM
+         SLAB    52083     203.4 MB    1% of TOTAL MEM
+
+   TOTAL SWAP  2097150         8 GB         ----
+    SWAP USED        0            0    0% of TOTAL SWAP
+    SWAP FREE  2097150         8 GB  100% of TOTAL SWAP
+
+ COMMIT LIMIT  4139121      15.8 GB         ----
+    COMMITTED   251967     984.2 MB    6% of TOTAL LIMIT
+
+The disk I/O was normal.
+
+Disk I/O statistics:
+
+crash> dev -d
+MAJOR GENDISK            NAME       REQUEST_QUEUE      TOTAL ASYNC  SYNC   DRV
+   11 ffff88043409a800   sr0        ffff880434390e68       0     0     0     0
+    8 ffff8804340d8800   sda        ffff880434aa8ea8       0     0     0     0
+  253 ffff8804340e4c00   dm-0       ffff8804341b2f28       0     0     0     0
+
+Network Statistics:
+
+crash> net
+   NET_DEVICE     NAME   IP ADDRESS(ES)
+ffff880439415020  lo     127.0.0.1
+ffff8804338e8020  eth1   172.254.16.144
+
+crash> net_device.stats ffff8804338e8020
+  stats = {
+    rx_packets = 6052782, 
+    tx_packets = 5977692, 
+    rx_bytes = 2135097935, 
+    tx_bytes = 2793492374, 
+    rx_errors = 0, 
+    tx_errors = 0, 
+    rx_dropped = 0, 
+    tx_dropped = 0, 
+    multicast = 0, 
+    collisions = 0, 
+    rx_length_errors = 0, 
+    rx_over_errors = 0, 
+    rx_crc_errors = 0, 
+    rx_frame_errors = 0, 
+    rx_fifo_errors = 0, 
+    rx_missed_errors = 0, 
+    tx_aborted_errors = 0, 
+    tx_carrier_errors = 0, 
+    tx_fifo_errors = 0, 
+    tx_heartbeat_errors = 0, 
+    tx_window_errors = 0, 
+    rx_compressed = 0, 
+    tx_compressed = 0
+  }
+
+There were "eth1" NIC link down messages reported at the end of kernel ring buffer.
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+vmxnet3 0000:0b:00.0: eth1: intr type 3, mode 0, 9 vectors allocated
+vmxnet3 0000:0b:00.0: eth1: NIC Link is Down                      <<<--- 
+ADDRCONF(NETDEV_UP): eth1: link is not ready                      <<<---
+fuse init (API version 7.13)
+vmxnet3 0000:0b:00.0: eth1: NIC Link is Up 10000 Mbps
+ADDRCONF(NETDEV_CHANGE): eth1: link becomes ready
+eth1: no IPv6 routers present
+vmxnet3 0000:0b:00.0: eth1: NIC Link is Down                      <<<---
+[..]

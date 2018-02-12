@@ -1,0 +1,5 @@
+When running DMMP with arrays, "Illegal Request" errors are seen in the logs and abnormally long boot times occur
+https://access.redhat.com/articles/110063
+
+Iostat shows higher await time for LVM device compared to underlying dm-multipath device on Red Hat Enterprise Linux 6
+https://access.redhat.com/solutions/114113

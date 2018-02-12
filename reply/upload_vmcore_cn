@@ -1,0 +1,4 @@
+请将vmcore文件上传到我们的ftp服务器中，修改vmcore文件名为vmcore_<问题单号>方法请参考：
+How to provide large files to Red Hat Support 
+https://access.redhat.com/site/solutions/2112
+或者也可以上传到国内第三方网盘中（比如百度网盘）并告知下载方法。上传结束后请提供vmcore文件的md5值和文件名供我们这里查找和校验。

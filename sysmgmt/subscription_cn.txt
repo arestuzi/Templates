@@ -1,0 +1,36 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+请按照以下步骤注册：
+https://access.redhat.com/labs/registrationassistant/?intcmp=hp|a|a2|regassist&;
+
+请参照此文档进行注册：
+https://access.redhat.com/zh_CN/solutions/1119463
+
+如何在客户门户网站上添加/删除订阅？
+https://access.redhat.com/zh_CN/solutions/3230271
+
+subscritpion-manager 常用参数说明:
+
+#subscription-manager repos --list #查看此订阅下多少软件库可以激活使用
+#subscription-manager repos --enable=REPOID #激活软件库
+#subscription-manager repos --disable=REPOID #禁用软件库
+
+#subscription-manager list --consumed #查看此机器使用了哪些订阅
+#subscription-manager list # 查看此机器使用了哪些产品
+
+#subscription-manager attach --auto #自动添加适合的订阅至系统
+#subscription-manager list --available #查看此账户下有多少可用订阅
+#subscription-manager attach --pool=POOID #通过poo ID添加指定订阅
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

@@ -1,0 +1,45 @@
+以下几个参数决定了，脏页回写到硬盘的时间和周期。
+==============================================================
+
+dirty_background_ratio  <--- 系统默认值 10
+
+Contains, as a percentage of total system memory, the number of pages at which
+the background kernel flusher threads will start writing out dirty data.
+
+==============================================================
+
+dirty_ratio <--- 系统默认值 40
+
+Contains, as a percentage of total system memory, the number of pages at which
+a process which is generating disk writes will itself start writing out dirty
+data.
+
+==============================================================
+dirty_writeback_centisecs <--- 系统默认值 500
+
+The kernel flusher threads will periodically wake up and write `old' data
+out to disk.  This tunable expresses the interval between those wakeups, in
+100'ths of a second.
+
+Setting this to zero disables periodic writeback altogether.
+
+==============================================================
+dirty_expire_centisecs <--- 系统默认值 3000
+
+This tunable is used to define when dirty data is old enough to be eligible
+for writeout by the kernel flusher threads.  It is expressed in 100'ths
+of a second.  Data which has been dirty in-memory for longer than this
+interval will be written out next time a flusher thread wakes up.
+
+==============================================================
+
+dirty_background_ratio 系统中脏页（dirty pages) 占总内存的10%以上，在下一次flush进程被唤醒时，会开始把内存中的脏页写入硬盘中。
+dirty_ratio 当系统中的脏页占总内存的40%以上，系统会直接开始把脏页写入硬盘中。 （脏页到40%时，系统会优先进行I/O写请求的操作）
+dirty_writeback_centisecs 系统唤醒flusher进程的时间，单位，厘秒， 500即为5秒
+dirty_expire_centisecs 系统脏页在内存的超时时间，脏页在内存中中存留30秒以上，在flush进程被唤醒时，会开始往硬盘中回写。
+
+dirty_writeback_centisecs 和 dirty_expire_centisecs 时间改为1秒，意味 pdflush进程1秒钟会被唤醒一次，脏页过期的时间为1秒。pdflush进程1秒钟会被唤醒一次，并把过期的脏页回写到内存中。 因为测试环境不同，无法确定是否会对您的IO以及业务造成负面影响，需要您自行在您的生产环境中进行测试。
+
+调整这两个参数，只是把原来pdflush被唤醒的周期，从5秒钟一次，调整到1秒钟一次。
+
+脏页过期时间从30秒，调整为1秒。意味着以前30秒内的脏页没有过期，这个时间段系统如果宕机，内核并不会通过pdflush进程把脏页写入硬盘。现调整为1秒，意味着脏页马上就会过期，并被pdflush写入硬盘。

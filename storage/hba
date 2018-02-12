@@ -1,0 +1,30 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+这个需要对驱动qla2xxx开更高的debug level才能从/var/log/messages中观测到，RHEL5中 $MASK=1, 具体可以查看此文档：
+https://access.redhat.com/articles/337813
+https://access.redhat.com/solutions/27624
+一般上述报错是由于硬件问题导致的，操作系统层面只能观测一些现象，并无法解决根本问题。
+
+kernel: qla2xxx 0000:0e:00.0: scsi(5:0:0): Abort command issued -- 1 123792f 2002.中相关解释：
+1 is the host number of the scsi target.
+2002 means the reset succeeded
+
+具体调查建议：
+1. Initial areas to investigate include SAN related components, such as the switches or storage targets.
+2. Command aborts are almost always caused by command timeouts. The first course of action is to abort it to make sure that any references to it are erased. Command timeout could be caused by many different things: SAN congestion, a flaky target, bad hardware somewhere, or an overloaded target that might be dropping commands.
+
+如果您希望提供更多的日志给硬件厂商。建议参照kbase https://access.redhat.com/solutions/27624
+中Diagnostic Steps中的步骤，开启HBA和scsi驱动debug模式，会在messages中收集到更多关于此问题的日志。
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703 
+------------------------------------------------

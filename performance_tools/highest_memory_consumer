@@ -1,0 +1,4 @@
+# cat ps |tail -n +2 | cut -b2- | gawk '{mem += $6} END {print "Total RSS Mem :" mem/1048576 "GB"}'
+
+
+#ps -auxwww | awk '{print $2, $4, $11}' | sort -k2rn | head -n 10

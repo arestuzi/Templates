@@ -1,0 +1,8 @@
+crash>  ps -G | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 "GB"}'
+total 10.6768GB
+
+crash>  ps -G | sed 's/>//g' | sort -k 8,8 -n | awk '$8 ~ /[0-9]/{ $8 = $8/1024" MB"; print }' | tail -20 
+
+crash> ipcs -m | sort -k 8,8 | gawk '{mem +=$6} END {print "total " mem/1024/1024/1024 "GB"}'
+total 4.05013GB
+

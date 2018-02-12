@@ -1,0 +1,78 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+您之前的回复：
+想咨询这样配置是否有问题？
+配置正确
+另外是否需要重启系统？
+需要重启系统后，内核才会为kdump预留出内存空间。需要重启。设置成功的话，重启系统后，可在/var/log/messages中看到如下日志：
+Mar  6 10:46:13 vm36-195 kernel: Reserving 161MB of memory at 688MB for crashkernel (System RAM: 7999MB)
+
+其次crashkernel=auto是应该配置auto，还是根据内存设置大小？
+如果需要按内存设置如何设置比较好？
+一般设置成auto即可。如果测试失败，才考虑手动指定此值大小。可参考如下文档：
+https://access.redhat.com/solutions/916043
+
+1、想确认RHEL7.1 如何设置kdump文件比较正确？
+您可以参考如下文档:
+https://access.redhat.com/solutions/6038
+https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/7/html/Kernel_Crash_Dump_Guide/sect-kdump-config-cli.html
+https://access.redhat.com/solutions/916043
+
+2、我们希望通过这次设置kdump设置，让所有系统都设置kdump，想咨询一下开启kdump会消耗太多系统资源吗？红帽是否建议所有系统都开启kdump这样便于排查问题？
+不会消耗过多资源，只会占用一部分内存空间。
+建议所有系统都配置kdump服务，系统异常宕机,kdump生成的vmcore是唯一可以调查宕机原因的数据。
+
+3、像类似512G内存产生的kdump是否会比较大？需要多少磁盘空间？
+产生vmcore大小具体要看系统宕机前的负载。建议磁盘预留空间大于系统物理内存大小。防止收集失败。
+4、如果死机没有产生kdump文件如何处理？ 是否死机需要启动魔术键来解决问题
+当前sosreport中显示的机器型号为Lenovo System x3850 X6
+
+如何使用 kdump 服务来分析内核崩溃，系统挂起，系统重启？
+https://access.redhat.com/zh_CN/solutions/667083
+
+配置魔术键:
+1. 直连键盘至服务器。
+
+2. 配置魔术键
+vim /etc/sysctl.conf
+kernel.sysrq = 1
+
+保存退出之后，　执行sysctl -p 使之生效。　如果出现宕机情况，　按键盘的alt+printscreen+c ，　触发内核发生panic 生成vmcore．　
+https://access.redhat.com/solutions/23069
+
+同时还可以配置NMI，硬件发送NMI中断至操作系统同样可以触发kernel panic
+建议做以下操作：
+
+vim /etc/sysctl.conf
+
+kernel.unknown_nmi_panic = 1
+kernel.panic_on_unrecovered_nmi = 1
+kernel.panic_on_io_nmi = 1
+
+保存退出之后，　执行sysctl -p 使之生效。　如果出现宕机情况，硬件的nmi按钮和远程控制卡均可以触发nmi中断。具体请联系硬件厂商获取进一步支持。发送了nmi后，内核会panic并生成vmcore.
+https://access.redhat.com/solutions/265173
+
+
+配置完成后，请测试是否可以正常触发并收集到完整的vmcore文件。默认vmcore文件会保存在目录/var/crash中。
+2. 另外，请注意,内存大小为512G，vmcore文件默认会保存在/var/crash目录下。硬盘空间需要大于512G才能保证收集到完整的vmcore文件。如果需要修改路径，请参照如下文档：
+https://access.redhat.com/zh_CN/solutions/667083
+
+修改/etc/kdump.conf中path <path>, 重起kdump服务即可生效。
+
+3. crashkernel请修改为auto，128M只是标准的值，根据内存大小以及第三方驱动，此值需要适当调大，使用auto系统会自动设置此值为适合的值.
+可参考如下文档：
+https://access.redhat.com/solutions/59432
+
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

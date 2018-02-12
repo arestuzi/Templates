@@ -1,0 +1,37 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+1.共享内存端和虚拟内存区别
+虚拟内存：
+https://access.redhat.com/solutions/19765
+共享内存：
+http://www.ibm.com/developerworks/cn/linux/l-ipc/part5/index2.html
+
+2.怎么计算内存使用率
+RHEL6中启用memAvailable参数：
+https://access.redhat.com/solutions/776393
+查看IPC共享内存使用量统计:
+https://access.redhat.com/solutions/414533
+查看哪些应用申请了共享内存:
+https://access.redhat.com/solutions/44861
+
+3.系统内存相关参数说明
+/proc/meminfo中各个参数解释：
+https://access.redhat.com/solutions/406773
+内存管理相关文档:
+https://access.redhat.com/solutions/16995
+oracle优化手册：
+https://access.redhat.com/solutions/39188
+
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

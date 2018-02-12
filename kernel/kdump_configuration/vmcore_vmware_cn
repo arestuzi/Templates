@@ -1,0 +1,28 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+如何使用 kdump 服务来分析内核崩溃，系统挂起，系统重启？
+https://access.redhat.com/zh_CN/solutions/667083
+
+由于是Vmware虚拟化环境，还可以通过产生快照的方式生成vmcore，保存故障发生时的内存信息：
+https://access.redhat.com/solutions/411653
+
+测试:
+echo c > /proc/sysrq-trigger　<---　注意会造成系统宕机，建议在维护时测试
+
+请将vmcore文件上传到我们的ftp服务器中，修改vmcore文件名为vmcore_<问题单号>方法请参考：
+How to provide large files to Red Hat Support
+https://access.redhat.com/site/solutions/2112
+或者也可以上传到国内第三方网盘中（比如百度网盘）并告知下载方法。上传结束后请提供vmcore文件的md5值和文件名供我们这里查找和校验。
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

@@ -1,0 +1,18 @@
+Hello!
+
+Thank you for contacting Red Hat!
+
+The mcelog is the user space translator for reported machine check exceptions by the hardware to the kernel. The kernel does the immediate actions (like killing processes, etc.) and mcelog decodes the errors and records them in /var/log/mcelog.
+
+If anything you found in /var/log/mcelog, please contact your hardware vendor. it is not a system error, so that we cannot solve it on the operating system level.
+
+Please also provide the sosreport ,which we can ensure that it is a hardware error.
+
+1. open a terminal, login as root and type sosreport -a。
+2. After the collection, a compress file will be generated under /tmp/，please upload the file to the case(via the customer portal)
+
+thank you!
+
+best, 
+
+Terry Ji

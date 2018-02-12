@@ -1,0 +1,119 @@
+
+	crash> log|grep -i lpfc
+	[242628.691082] lpfc 0000:81:00.0: 1:(0):2753 PLOGI failure DID:211900 Status:x3/x2
+	[242893.561025] lpfc 0000:81:00.0: 1:(0):0713 SCSI layer issued Device Reset (2, 2) return x2002
+	[242893.563173] lpfc 0000:81:00.0: 1:(0):0713 SCSI layer issued Device Reset (2, 3) return x2002
+	[242893.565661] lpfc 0000:81:00.0: 1:(0):0713 SCSI layer issued Device Reset (2, 6) return x2002
+	[249294.114032] IP: [<ffffffffa0241ef9>] lpfc_scsi_cmd_iocb_cmpl+0x199/0x11c0 [lpfc]
+
+
+When IO commands issued to the SAN devices are unable to complete within timeout, then SCSI layer timeout occurs. The SCSI layer must abort the timed out command so that it cannot complete after we've given up waiting.  This is managed by the function scsi_abort_eh_cmnd:
+
+
+        static void scsi_abort_eh_cmnd(struct scsi_cmnd *scmd)
+        {
+                if (__scsi_try_to_abort_cmd(scmd) != SUCCESS)                       
+                        if (scsi_try_bus_device_reset(scmd) != SUCCESS)             
+                                if (scsi_try_bus_reset(scmd) != SUCCESS)            
+                                        scsi_try_host_reset(scmd);                  
+        }
+
+
+First, the scsi layer will try to reset the command. This calls lpfc_abort_handler, which will attempt to abort the command. If the command cannot be aborted, we will then try to reset the device (scsi_try_bus_device_reset).  This calls lpfc_device_reset_handler, which will attempt a device reset.  The error message may look like this:
+
+
+	[242893.563173] lpfc 0000:81:00.0: 1:(0):0713 SCSI layer issued Device Reset (2, 3) return x2002
+
+
+Above error messages more or less indicates that there is some some issue present from the SAN/Storage, FC cabling, FC switch, HBA, or zoning, due to which the IO commands issued to the SAN devices are unable to complete within timeout and lpfc driver is required to abort the timed out commands. Please go through the following article for detailed information about the same:
+
+"lpfc "SCSI layer issued Device Reset" messages in RHEL"
+ https://access.redhat.com/solutions/39590
+
+Also, the logs are completely filled with following error messages for SCSI, IO commands issued to the sub paths connected through scsi2/host2 Emulex FC HBA:
+
+
+	[235424.085111] sd 2:0:3:7: [sdbx] CDB: 
+	[235424.085113] Read(10): 28 00 02 37 17 10 00 00 80 00
+	[235424.085119] end_request: I/O error, dev sdbx, sector 37164816
+	[235425.145544] scsi_io_completion: 1 callbacks suppressed
+	[235425.145550] sd 2:0:3:7: [sdbx]  
+	[235425.145551] Result: hostbyte=DID_ERROR driverbyte=DRIVER_OK
+	[235425.145553] sd 2:0:3:7: [sdbx] CDB: 
+	[235425.145554] Read(10): 28 00 02 af 77 18 00 01 00 00
+	[235425.145559] blk_update_request: 1 callbacks suppressed
+	[235425.145561] end_request: I/O error, dev sdbx, sector 45053720
+	[235455.657584] sd 2:0:3:7: [sdbx]  
+	[235455.657591] Result: hostbyte=DID_ERROR driverbyte=DRIVER_OK
+	[235455.657593] sd 2:0:3:7: [sdbx] CDB: 
+	[235455.657595] Read(10): 28 00 02 af 78 18 00 01 00 00
+	[235455.657601] end_request: I/O error, dev sdbx, sector 45053976
+	[...]
+
+
+The SCSI error return code of "DID_ERROR" corresponds to hexcode 0x00070000, this could be decoded as shown below:
+
+
+	0x00 07 00 00
+		   00   status byte : {likely} not valid, see other fields;
+		00         msg byte : {likely} not valid, see other fields;
+	     07           host byte : DID_ERROR - internal error
+	  00            driver byte : {likely} not valid, see other fields;
+
+
+
+The DID_ERROR return code indicates that driver detected an internal error condition within the response data returned from storage hardware.
+
+DID_ERROR is assigned within the driver when the returned data from the HBA doesn't make sense (like SUCCESS scsi status on io command, but residual byte count returned indicates not all requested data was transferred). DID_ERRORs are often akin to software detecting that some type of hardware error present.
+
+Generally with FC drivers/hba, DID_ERROR is assigned when a hardware or san-based issue is present within the storage subsystem such that the received fibre channel response frames received back from the hba at command completion time contains invalid or has conflicting information in some way.  Some command examples of why DID_ERROR is returned:
+
+  o The FC response frame indicates the response length field is valid, but
+    this means, by FC specification, that the length must be 0, 4, or 8 but
+    the length field is not any of these allowed sizes.
+
+  o The scsi protocol data includes a sense buffer and indicates the whole
+    of included scsi data is N bytes, but the FC "wrapper" indicates that it
+    is carrying only X byte of encapsulated protocol data where X < N.  For
+    example, the scsi data might provide a sense buffer length of 24 bytes,
+    but the fibre channel frame indicates it is carrying only 8 bytes of total scsi
+    data -- essentially in impossible condition for the driver to reconcile.
+
+Please go through the following article for detailed information about the same:
+
+"How do I interpret scsi status messages in RHEL like "sd 2:0:0:243: SCSI error: return code = 0x08000002"?"
+ What does return code = 0x00070000 mean?  -  https://access.redhat.com/articles/280653#00.07.00.00
+
+"Result: hostbyte=DID_ERROR driverbyte=DRIVER_OK"
+ https://access.redhat.com/solutions/438403
+
+It is possible that there may not be any issue present from SAN/Storage target controller, but there is some issue present with the FC switch port, cabling or HBA port which could also result in above issue. If there is some issue present only with specific FC switch port, cabling or the HBA port connected to the above host, then other systems in same environment may not get the SCSI command failures, this issue would be observed only on the affected system.
+
+So, we would recommend to please try to check with SAN/Storage vendor to verify if there was any issue present from Emulex FC HBA port, FC cabling, switch port, zoning etc. due to which the SCSI commands issued to SAN devices connected through scsi2 Emulex HBA were failing with above error return code? Could you please share with us their detailed analysis on the same.
+
+If the SAN/Storage vendor is still not able to find any issues present from Emulex FC HBA port, FC cabling, switch port, zoning etc. then we could try to enable the debug logging for lpfc, scsi module as per the following steps, this would help us to provide even more detailed analysis about why the SCSI commands were getting failed:
+
+To enable SCSI logging please use the following commands:
+
+
+	$ echo '4099' > /sys/module/scsi_mod/parameters/scsi_logging_level
+	$ cat /sys/module/scsi_mod/parameters/scsi_logging_level
+
+
+To enable lpfc debug logging:
+
+
+	$ echo '4253' > /sys/class/scsi_host/host<N>/lpfc_log_verbose
+	$ cat /sys/class/scsi_host/host<N>/lpfc_log_verbose
+
+
+Replace "host<N>" in above command with the Emulex HBA present on server.
+
+Once the same SCSI errors, "lpfc SCSI layer issued Device Reset" errors are observed and the debug logs are captured, we can disable the debug logging:
+
+
+	$ echo '0' > /sys/module/scsi_mod/parameters/scsi_logging_level
+	$ echo '0' > /sys/class/scsi_host/host<N>/lpfc_log_verbose
+
+
+NOTE:   Please note that when SCSI, lpfc debug logging is enabled on server, it will log much verbose information in the "/var/log/messages" file. This could also cause the "/var" filesystem to get filled rapidly, also redirecting much verbose logs to the messages log file would increase number of IO and system load on a busy production server. So we would recommend to enable the SCSI, lpfc debug logging only if the issue is observed frequently, or it reproducible, and once the debug logs are captured please disable the debug logging.

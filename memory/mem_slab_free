@@ -1,0 +1,31 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+通过您上传的sosreport，可以看出
+cat /proc/meminfo
+Slab:           26957208 kB
+SReclaimable:   26896616 kB
+
+slab占用了比较的内存， 但是同时可回收的slab值也很高，所以如果将要出现OOM现象时，操作系统会自动释放slab，取得相应的内存空间给新的进程。
+详情请参考此kbase：
+https://access.redhat.com/solutions/55818
+
+导致slab高的原因，主要是因为文件名比较多， dentry cache是为了加快文件搜索而存在的一种缓存。通过echo 2 > /proc/sys/vm/drop_caches 会手动释放掉相应缓存。
+
+关于ｆｒｅｅ命令的解释：
+https://access.redhat.com/solutions/1169
+
+/proc/meminfo中各参数的解释：
+https://access.redhat.com/solutions/406773
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703 
+------------------------------------------------

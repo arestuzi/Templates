@@ -1,0 +1,34 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+当前上传的sosreport中并未包含所有的messages日志,并没有1月7日的日志.但是在最近的一次dmesg日志中发现如下报错,与文件系统只读有关:
+
+1929 sd 0:0:5:0: [sdd] Add. Sense: Unrecovered read error
+1930 sd 0:0:5:0: [sdd] CDB: Read(16): 88 00 00 00 00 01 27 80 00 9a 00 00 00 08 00 00
+1931 EXT4-fs error (device sdd1): ext4_read_block_bitmap: Cannot read block bitmap - block_group = 18927, block_bitmap = 619708431
+1932 EXT4-fs error (device sdd1) in ext4_free_blocks: IO failure
+1933 sd 0:0:5:0: [sdd] Unhandled sense code
+1934 sd 0:0:5:0: [sdd] Result: hostbyte=DID_OK driverbyte=DRIVER_SENSE
+1935 sd 0:0:5:0: [sdd] Sense Key : Medium Error [current] [descriptor]   <-----
+1936 Descriptor sense data with sense descriptors (in hex):
+
+有如下kbase对此报错进行解释:
+https://access.redhat.com/solutions/35465
+
+建议:
+您需要联系存储厂商检查存储是否存在问题.
+
+如果方便,请执行以下命令打包上传所有的messages日志,方便查询是否还有其他问题.
+# tar cvf /tmp/messages.tar  /var/log/messages*
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

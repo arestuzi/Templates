@@ -1,0 +1,407 @@
+I hope you're doing good.
+
+My name is Buland, I am a Software Maintenance Engineer from the kernel speciality group.
+
+The analysis of kernel crash dump shows that kernel **panic** occurred due to kernel mode 
+stack overflow/overrun.
+
+The kernel stack overrun means that there were so many nested function calls that growing
+kernel stack of the task and it has reached to the struct thread_info of the task and has 
+damaged it.
+
+o In older version of RHEL-6 kernel, the kernel mode stack allocation is 8KB in size with 
+  the bottom 104 bytes of the allocation used by the "thread_info" structure. 
+
+Kernel Source: arch/x86/include/asm/page_64_types.h
+
+#define THREAD_ORDER    1
+#define THREAD_SIZE  (PAGE_SIZE << THREAD_ORDER)
+              ^
+              '....
+   
+Kernel Source: arch/x86/include/asm/page_types.h
+
+#define PAGE_SHIFT      12
+#define PAGE_SIZE       (_AC(1,UL) << PAGE_SHIFT)
+            ^
+            '....
+
+crash> pd (1 << 12)
+$1 = 4096
+
+crash> pd ( 4096 << 1 )
+$2 = 8192
+      ^ 
+      '....{ 8 KiB }
+
+o The "thread_info" structure contains meta data about the current thread.
+
+crash> thread_info -od
+struct thread_info {
+    [0] struct task_struct *task;
+    [8] struct exec_domain *exec_domain;
+   [16] __u32 flags;
+   [20] __u32 status;
+   [24] __u32 cpu;
+   [28] int preempt_count;
+   [32] mm_segment_t addr_limit;
+   [40] struct restart_block restart_block;
+   [88] void *sysenter_return;
+   [96] int uaccess_err;
+}
+SIZE: 104
+
+o A kernel mode stack looks like the following in memory:
+
+                                        Kernel-mode
+	                                 stack of
+	                                  process
+                                                                 High Address
+      Start of Stack     ----->/--------------+---------------\     ---+---
+                               |              |               |        |
+                               |              |               |        |
+                               |              v               |        |
+                               |           x86_64             |        |
+                               |       growth of stack        |        |
+                               |              of              |        |
+                               |    (towards lower memory)    |        |
+       Stack pointer     ----->+------------------------------+        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |  8k stack
+                               |           unused             |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               +------------------------------+        |      --+--
+                               |                              |        |        |           
+                               |                              |        |        |
+                               |                              |        |        |
+                               |          thread_info         |        |        | 104 bytes
+                               |                              |        |        | 
+                               |                              |        |        |
+                               |                              |        |        |
+  current_thread_info    ----->\------------------------------/     ---+---   --+--  <--- End (8 KiB) / Page boundary
+                                                                  Low Address
+
+o As entries are "pushed" to the kernel-mode stack, it grows towards lower memory.
+o These entries often include local variables, parameters and a return address etc.
+o This data is typically stored within a frame (or stack frame).
+o A stack frame is a virtual block inside the stack assigned for a function call.
+o As the stack grows it moves down towards the "thread_info" structure & if sufficient 
+  stack space is consumed, it overwrites "thread_info" structure and anything before it.
+ 
+o In an effort to aid understanding, see the following diagram: 
+
+                                        Kernel-mode
+	                                 stack of
+	                                  process
+                                                                 High Address
+      Start of Stack     ----->/--------------+---------------\     ---+---
+                               |              |               |        |
+                               |              |               |        |
+                               |              v               |        |
+                               |                              |        |
+                               |          grows down          |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |  8k stack
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               |                              |        |
+                               +------------------------------+        |      --+--
+                               |//////////////////////////////|        |        |           
+                               |//////////////////////////////|        |        |
+  Stack pointer          ----->|//////////////////////////////|        |        |                
+                               |///////// thread_info ////////|        |        | 104 bytes
+                               |//////////////////////////////|        |        | 
+                               |//////////////////////////////|        |        |
+                               |//////////////////////////////|        |        |
+  current_thread_info    ----->\------------------------------/     ---+---   --+--  <--- End (8 KiB) / Page boundary
+                                                                  Low Address
+
+o The next time when a process tries to access the corrupted "thread_info" structure it
+  triggers the kernel panic.
+
+Here's an excerpt from the crash analysis;
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: cnwjnmesdb01
+     RELEASE: 2.6.32-504.el6.x86_64
+       PANIC: "BUG: unable to handle kernel paging request at 00000000f61906a0"
+
+crash> sys -i
+        DMI_BIOS_VENDOR: HP
+       DMI_BIOS_VERSION: P89
+          DMI_BIOS_DATE: 07/20/2015
+         DMI_SYS_VENDOR: HP
+       DMI_PRODUCT_NAME: ProLiant DL380 Gen9
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+BUG: unable to handle kernel paging request at 00000000f61906a0
+IP: [<ffffffff8105d834>] update_curr+0x144/0x1f0
+PGD 170e9f067 PUD 3359b3067 PMD 0 
+Thread overran stack, or stack corrupted           <<<---
+Oops: 0000 [#1] SMP 
+last sysfs file: /sys/devices/virtual/net/bond0/carrier
+CPU 13                                             <<<---
+[..]
+
+The panic task is "ora_povc_wjsf1" with PID (63521):
+
+crash> set -p
+    PID: 63521
+COMMAND: "ora_povc_wjsf1"
+   TASK: ffff88005678e040  [THREAD_INFO: ffff88042e8b2000]
+    CPU: 13
+  STATE: TASK_RUNNING (PANIC)
+
+As per the above output;
+
+o "ora_povc_wjsf1" task with PID (63521) was executing on CPU 13.
+o struct task_struct * is { 0xffff88005678e040 }
+o struct thread_info * is { 0xffff88042e8b2000 }
+
+The stack pointer is { 0xffff88042e8b2000 }
+
+crash> task_struct.stack 0xffff88005678e040
+  stack = 0xffff88042e8b2000
+
+The special magic value {stack canary} is over-written;
+
+crash> px (unsigned long *)(((struct thread_info *)0xffff88042e8b2000) + 1) 
+$3 = (unsigned long *) 0xffff88042e8b2068
+
+crash> rd 0xffff88042e8b2068
+ffff88042e8b2068:  0000000257ac6e9d                    .n.W....
+                           ^  
+                           '....{ it should be 0000000057ac6e9d }
+
+Kernel Source: include/linux/magic.h
+
+58 #define STACK_END_MAGIC         0x57AC6E9D
+                                       ^
+                                       '....
+
+The "thread_info" structure at the bottom of the stack space has been corrupted due to 
+stack overrun.
+
+crash> thread_info ffff88042e8b2000 | head
+struct thread_info {
+  task = 0x1,                          <<<---
+  exec_domain = 0xffff88042e8b2000, 
+  flags = 1, 
+  status = 0, 
+  cpu = 780869632,                     <<<---
+  preempt_count = 34820, 
+  addr_limit = {
+    seg = 18446612132314255360
+  }, 
+
+o The value of "task" and "cpu" are bogus in above "thread_info" structure.
+
+crash> thread_info.task ffff88042e8b2000
+  task = 0x1
+          ^
+          '....
+
+crash> task_struct 0x1
+struct: invalid kernel virtual address: 0x1
+
+o The value of "cpu" is also bogus in above "thread_info" structure.
+
+The total number of CPUs on this system are 72 but value of CPU in above "thread_info" 
+structure is set to "780869632"
+
+crash> sys| grep -e CPUS
+        CPUS: 72
+
+crash> thread_info.cpu ffff88042e8b2000
+  cpu = 780869632
+            ^
+            '....
+
+crash> set -c 780869632
+set: invalid cpu number: system has only 72 cpus
+
+Backtrace of panic task:
+
+crash> bt -T
+PID: 63521  TASK: ffff88005678e040  CPU: 13  COMMAND: "ora_povc_wjsf1"
+  [ffff88042e8b2170] __alloc_pages_nodemask at ffffffff81133d53
+  [ffff88042e8b2270] ____cache_alloc_node at ffffffff81173d70
+  [ffff88042e8b22d0] fallback_alloc at ffffffff81173ede
+  [ffff88042e8b22e0] cache_grow at ffffffff8117399f
+  [ffff88042e8b2350] ____cache_alloc_node at ffffffff81173cc9
+  [ffff88042e8b23f0] mempool_alloc_slab at ffffffff81126a85
+  [ffff88042e8b2400] mempool_alloc at ffffffff81126c23
+  [ffff88042e8b2480] sg_init_table at ffffffff8129bc80
+  [ffff88042e8b24a0] __sg_alloc_table at ffffffff8129bd1e
+  [ffff88042e8b24b0] scsi_sg_alloc at ffffffff81387f20
+  [ffff88042e8b24e0] swiotlb_map_sg_attrs at ffffffff812a2af9
+  [ffff88042e8b2510] start_io at ffffffffa0038f9f [hpsa]
+  [ffff88042e8b2560] enqueue_cmd_and_start_io at ffffffffa00390ad [hpsa]
+  [ffff88042e8b25c0] cfq_set_request at ffffffff812898c9
+  [ffff88042e8b25d0] mempool_alloc_slab at ffffffff81126a85
+  [ffff88042e8b25e0] mempool_alloc at ffffffff81126c23
+  [ffff88042e8b2660] cfq_prio_tree_add at ffffffff81285247
+  [ffff88042e8b2680] blkiocg_update_io_add_stats at ffffffff8127e4f1
+  [ffff88042e8b26b0] cfq_insert_request at ffffffff812887db
+  [ffff88042e8b2720] blkiocg_update_io_merged_stats at ffffffff8127e411
+  [ffff88042e8b2740] elv_merged_request at ffffffff81269ec4
+  [ffff88042e8b2770] blk_queue_bio at ffffffff81271aa4
+  [ffff88042e8b27f0] generic_make_request at ffffffff81270730
+  [ffff88042e8b2800] mempool_alloc at ffffffff81126c23
+  [ffff88042e8b28d0] submit_bio at ffffffff81270b00
+  [ffff88042e8b2908] apic_timer_interrupt at ffffffff8100bb8e
+  [ffff88042e8b2968] _spin_lock at ffffffff8152ce71
+  [ffff88042e8b29a0] page_referenced at ffffffff8115a6c2
+  [ffff88042e8b2a50] shrink_page_list.clone.3 at ffffffff8113da55
+  [ffff88042e8b2af0] mem_cgroup_lru_del_list at ffffffff8117d1eb
+  [ffff88042e8b2b20] isolate_lru_pages.clone.0 at ffffffff8113e1d7
+  [ffff88042e8b2ba0] shrink_inactive_list at ffffffff8113e923
+  [ffff88042e8b2d50] shrink_mem_cgroup_zone at ffffffff8113f18e
+  [ffff88042e8b2db0] mem_cgroup_iter at ffffffff8117eebd
+  [ffff88042e8b2e00] shrink_zone at ffffffff8113f3ca
+  [ffff88042e8b2e80] do_try_to_free_pages at ffffffff8113f5e5
+  [ffff88042e8b2e90] get_page_from_freelist at ffffffff81131c8c
+  [ffff88042e8b2f20] try_to_free_pages at ffffffff8113fcb2
+  [ffff88042e8b2fc0] __alloc_pages_nodemask at ffffffff811340be
+  [ffff88042e8b3100] alloc_page_interleave at ffffffff81169dc9
+  [ffff88042e8b3130] alloc_pages_vma at ffffffff8116c846
+  [ffff88042e8b3180] shmem_alloc_page at ffffffff81141a5f
+  [ffff88042e8b3220] find_get_page at ffffffff811240de
+  [ffff88042e8b3240] find_lock_page at ffffffff8112532a
+  [ffff88042e8b3270] shmem_getpage_gfp at ffffffff81143877
+  [ffff88042e8b3320] shmem_fault at ffffffff81143cbb
+  [ffff88042e8b3340] shm_fault at ffffffff8121e7de
+  [ffff88042e8b3350] __do_fault at ffffffff8114eae4
+  [ffff88042e8b3360] mempool_alloc at ffffffff81126c23
+  [ffff88042e8b33e0] handle_pte_fault at ffffffff8114f0b7
+  [ffff88042e8b3430] enqueue_cmd_and_start_io at ffffffffa00390ad [hpsa]
+  [ffff88042e8b3460] hpsa_scsi_ioaccel_queue_command at ffffffffa0039650 [hpsa]
+  [ffff88042e8b34c0] handle_mm_fault at ffffffff8114fcea
+  [ffff88042e8b3530] __do_page_fault at ffffffff8104d0d8
+  [ffff88042e8b3570] cfq_set_request at ffffffff812898c9
+  [ffff88042e8b3580] mempool_alloc_slab at ffffffff81126a85
+  [ffff88042e8b3590] mempool_alloc at ffffffff81126c23
+  [ffff88042e8b35d8] zone_statistics at ffffffff81146c60
+  [ffff88042e8b3610] cfq_prio_tree_add at ffffffff81285247
+  [ffff88042e8b3650] do_page_fault at ffffffff8152ffbe
+  [ffff88042e8b3680] page_fault at ffffffff8152d375
+  [ffff88042e8b3708] csum_partial_copy_generic at ffffffff81510473
+  [ffff88042e8b3770] csum_partial_copy_from_user at ffffffff815103a0
+  [ffff88042e8b37b0] csum_partial_copy_fromiovecend at ffffffff81454258
+  [ffff88042e8b3820] ip_generic_getfrag at ffffffff8149b54d
+  [ffff88042e8b3850] __ip_append_data at ffffffff8149a72c
+  [ffff88042e8b38a8] ip_generic_getfrag at ffffffff8149b510
+  [ffff88042e8b3920] ip_make_skb at ffffffff8149afab
+  [ffff88042e8b3960] ip_generic_getfrag at ffffffff8149b510
+  [ffff88042e8b3a30] ip_generic_getfrag at ffffffff8149b510
+  [ffff88042e8b3a40] udp_sendmsg at ffffffff814c02d5
+  [ffff88042e8b3b10] __lru_cache_add at ffffffff8113b220
+  [ffff88042e8b3b70] inet_sendmsg at ffffffff814c8f5a
+  [ffff88042e8b3bb0] sock_sendmsg at ffffffff81448353
+  [ffff88042e8b3c20] autoremove_wake_function at ffffffff8109eb00
+  [ffff88042e8b3cb0] handle_pte_fault at ffffffff8114f0b7
+  [ffff88042e8b3d10] move_addr_to_kernel at ffffffff814481a4
+  [ffff88042e8b3d60] __sys_sendmsg at ffffffff81449b46
+  [ffff88042e8b3e00] __do_page_fault at ffffffff8104d18c
+  [ffff88042e8b3e50] mmput at ffffffff8107213e
+  [ffff88042e8b3e70] getrusage at ffffffff81094578
+  [ffff88042e8b3f10] sys_sendmsg at ffffffff81449d69
+  [ffff88042e8b3f80] system_call_fastpath at ffffffff8100b072
+    RIP: 0000003b7600ed30  RSP: 00007fff244f2c40  RFLAGS: 00010206
+    RAX: 000000000000002e  RBX: ffffffff8100b072  RCX: 0000000000000004
+    RDX: 0000000000000000  RSI: 00007fff244f1cd0  RDI: 0000000000000004
+    RBP: 00007fff244f1d60   R8: 00007f9abea48150   R9: 0000000000000003
+    R10: 000000061164cf48  R11: 0000000000000246  R12: 00007f9abea47b60
+    R13: 0000000000000001  R14: 00007f9abef436a8  R15: 0000000000000001
+    ORIG_RAX: 000000000000002e  CS: 0033  SS: 002b
+
+The analysis of panic task's backtraces shows that "ora_povc_wjsf1" requested for a shared 
+memory segment which caused a page fault forcing the page to be paged in. 
+
+The system found that it is short on memory & attempted to reclaim memory. The combination 
+of system read code, page fault code, shm page  fault code, vm code to  free up memory and 
+kernel module [hpsa] function calls appears to be more than the kernel stack can hold.
+
+The "NR_FREE_PAGES" in ZONE_NORMAL of Node 0 and 1 are below the "WMARK_LOW". 
+
+Normal Zone Information of Node 0 and Node 1:
+
+crash> kmem -z | grep -e Normal -A 3
+NODE: 0  ZONE: 2  ADDR: ffff880000019d80  NAME: "Normal"
+  SIZE: 7864320  PRESENT: 7756800  MIN/LOW/HIGH: 3817/4771/5725
+  VM_STAT:
+                NR_FREE_PAGES: 3814
+--
+NODE: 1  ZONE: 2  ADDR: ffff880880010dc0  NAME: "Normal"
+  SIZE: 8388608  PRESENT: 8273920  MIN/LOW/HIGH: 4072/5090/6108
+  VM_STAT:
+                NR_FREE_PAGES: 4066
+
+( NR_FREE_PAGES < LOW )
+
+The memory utilization also indicates that this system was utilizing almost *100%* of the
+total physical memory and ~68% of the total swap memory.
+
+System Memory Usage:
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  16460010      62.8 GB         ----
+         FREE    42342     165.4 MB    0% of TOTAL MEM
+         USED  16417668      62.6 GB   99% of TOTAL MEM
+       SHARED  3937742        15 GB   23% of TOTAL MEM
+      BUFFERS    10633      41.5 MB    0% of TOTAL MEM
+       CACHED  4352104      16.6 GB   26% of TOTAL MEM
+         SLAB   128912     503.6 MB    0% of TOTAL MEM
+
+   TOTAL SWAP  6143999      23.4 GB         ----
+    SWAP USED  4226507      16.1 GB   68% of TOTAL SWAP
+    SWAP FREE  1917492       7.3 GB   31% of TOTAL SWAP
+
+ COMMIT LIMIT  14374004      54.8 GB         ----
+    COMMITTED  14953756        57 GB  104% of TOTAL LIMIT
+
+Root Cause:
+***********
+o The kernel panic occurred due to kernel mode stack **overflow/overrun**.
+
+Resolution:
+***********
+o In kernel version 2.6.32-573.el6 or later the kernel mode stack size is expanded to 16KB 
+to account for higher requirements of some functions, thus **preventing** the crashes from 
+occurring.
+
+ o Errata Link  : https://rhn.redhat.com/errata/RHSA-2015-1272.html
+ o Package Name : kernel-2.6.32-573.el6.x86_64.rpm
+
+$ rpm -q kernel --changelog | grep -e "kernel stack to 16K"
+- [kernel] x86_64: expand kernel stack to 16K (Johannes Weiner) [1045190 1060721]
+
+Kernel Source: arch/x86/include/asm/page_64_types.h
+
+#define THREAD_ORDER    2
+#define THREAD_SIZE  (PAGE_SIZE << THREAD_ORDER)
+
+crash> pd ( 4096 << 2 )
+$4 = 16384
+       ^
+       '....{ 16 KiB }
+
+Recommendation:
+***************
+o Update the kernel package to version "2.6.32-573.el6" or higher.

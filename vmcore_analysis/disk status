@@ -1,0 +1,26 @@
+crash> dev -d
+MAJOR GENDISK            NAME       REQUEST_QUEUE      TOTAL ASYNC  SYNC   DRV
+    8 ffff88043379a000   sda        ffff8804318a0ea0       0     0     0     0
+    8 ffff880433797000   sdb        ffff8804318a4ee0       0     0     0     0
+    8 ffff880433793000   sdc        ffff8804318a43b8       0     0     0     0
+    8 ffff880433790c00   sdd        ffff8804318e4f20       0     0     0     0
+    8 ffff88043378dc00   sde        ffff8804318e43f8       0     0     0     0
+    8 ffff880433709c00   sdf        ffff8804318e6f60       0     0     0     0
+
+
+crash> request_queue.queuedata ffff8804318a0ea0
+  queuedata = 0xffff88043347a800
+crash> scsi_device.sdev_state 0xffff88043347a800
+  sdev_state = SDEV_OFFLINE
+
+crash> request_queue.queuedata ffff8804318a4ee0
+  queuedata = 0xffff880433c9f800
+crash> scsi_device.sdev_state 0xffff880433c9f800
+  sdev_state = SDEV_OFFLINE
+
+crash> request_queue.queuedata ffff8804318a43b8 
+  queuedata = 0xffff8804337a3800
+crash> scsi_device.sdev_state 0xffff8804337a3800
+  sdev_state = SDEV_OFFLINE
+
+Disks sda,sdb and sdc were in offline status, check hardware disk.

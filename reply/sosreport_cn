@@ -1,0 +1,23 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+请您在业务闲时或者维护窗口内收集并上传这台主机的sosreport,以便我们详细了解问题，以确定问题原因。
+sosreport的收集方法：
+1. 打开一个终端，使用root用户登录，在命令行下输入sosreport -a回车。
+2. 收集完成后，会在/tmp/目录下生成一个压缩文件，请把此文件上传到case中(通过网页上传)。
+
+详细请参看:
+What is a sosreport and how do I create one in Red Hat Enterprise Linux 4.6 and later?
+https://access.redhat.com/knowledge/solutions/3592
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

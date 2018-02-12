@@ -1,0 +1,23 @@
+https://access.redhat.com/solutions/44861
+
+• Are System V IPC shared memory segments visible under /dev/shm?
+
+   https://access.redhat.com/solutions/513123
+
+ 
+
+• How to monitor shared memory usage in Red Hat Enterprise Linux
+
+   https://access.redhat.com/solutions/414533
+
+ 
+
+• Why shared memory can not be released by "ipcrm" command ?
+
+   https://access.redhat.com/solutions/39532
+
+ 
+
+• 'free' output does not show shared memory
+
+   https://access.redhat.com/solutions/32276

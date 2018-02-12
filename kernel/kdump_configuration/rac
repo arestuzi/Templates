@@ -1,0 +1,24 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+1. 当前系统运行了Oralce的RAC集群。如果是宕机自动重启，请联系Oracle相关技术支持,查看相关oracle日志是否会有新的发现。
+https://access.redhat.com/zh_CN/solutions/667083
+2. 当前系统并没有配置kdump服务。
+建议：
+1. 按照如下文档配置kdump服务，系统宕机产生kernel panic，会生成vmcore进行进一步分析.
+2. 如果是oracle集群，请按照如下文档中的方法配置fence kdump,节点心跳丢失,被集群fence前,会kernel panic,生成vmcore文件. 我们可以通过分析此文件查看事故原因.　关于如下文档中有任何配置问题，请联系oracle相关技术支持。
+
+How to capture kernel crash dump (vmcore) upon Oracle RAC 11gR2 or Oracle RAC 12 node eviction ?
+https://access.redhat.com/solutions/972193
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

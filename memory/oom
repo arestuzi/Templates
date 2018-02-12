@@ -1,0 +1,41 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
+1、请帮忙关于OS OOM机制比较详细的介绍
+请参考文档：
+What are out of memory events?
+https://access.redhat.com/articles/1360063
+What is the logic behind killing processes during an Out of Memory situation?
+https://access.redhat.com/solutions/22871
+
+2、对于一个物理机，当free为多少时，会触发oom killer机制，有没参数控制
+可以通过调节min_free_kbytes来确定，内核何时会开始唤醒kswapd进程来回收内存。但是否会触发oom，实际取决于应用需要多少内存。比如内核回收了10M，但是应用需要20M则会触发oom，如果回收的内存刚好满足应用的需求，则不会触发oom
+min_free_kbytes相关说明：
+https://access.redhat.com/solutions/336033
+内存管理相关文档：
+https://access.redhat.com/solutions/16995
+
+3、如果我机预留部分内存给OS，其它全部分给应用，有没相关的配置实例。
+hung page可以预留内存给应用，但是要看应用启动时是否会使用这部分内存。
+What are Huge Pages and the advantages of using them?
+https://access.redhat.com/solutions/2592
+
+或者可以设置overcommit_memory，来保证应用申请的虚拟内存总大小不能超过物理内存，一定程度上保证了减少触发oom的可能，如果应用申请的虚拟内存过大，超过了物理内存，则应用无法启动。相关说明文档：
+https://access.redhat.com/solutions/68612
+
+另外如果出现了oom现象，可以通过以下参数调节，操作系统优先杀掉哪些进程
+https://access.redhat.com/node/20985
+
+如果有其他问题需要咨询，您可以把联系方式更新在问题单上，如果有需要可以电话沟通
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------
