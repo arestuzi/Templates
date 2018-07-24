@@ -1,3 +1,6 @@
+您好！
+感谢您使用红帽全球技术支持服务！
+
 默认vmcore会保存在目录/var/crash中，请将vmcore文件上传到我们的ftp服务器中，修改vmcore文件名为vmcore_<问题单号>方法请参考：
 How to provide large files to Red Hat Support
 https://access.redhat.com/site/solutions/2112
@@ -6,3 +9,15 @@ https://access.redhat.com/site/solutions/2112
 您还可以使用split命令拆分vmcore文件至每个500M，并以附件形式上传至问题单。
 How can I split a file to several smaller pieces?
 https://access.redhat.com/solutions/4109
+
+如有问题，欢迎您与我们联系。
+顺祝商祺！
+Terry Ji
+红帽全球支持服务
+
+------------------------------------------------
+自2015年3月1日起，红帽软件提供中文在线支持服务。您可
+通过访问“支持问题单”，并点击问题单列表或问题单页面右
+上方的“Chat with Support”按钮来发起在线服务会话。
+https://access.redhat.com/zh_CN/articles/1339703
+------------------------------------------------

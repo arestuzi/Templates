@@ -1,0 +1,197 @@
+The analysis of kernel crash dump (vmcore) shows that the system has encountered multiple
+soft lockups due to a known kernel bug which is tracked in private Bug ID #1565989[1] and
+is described in Red Hat KCS article #3390081[2].
+
+Here's an excerpt from the analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE
+    NODENAME: cschuv-rhdbs001.cts.com
+     RELEASE: 2.6.32-696.23.1.el6.x86_64
+
+crash> sys -i | grep -e DMI_SYS_VENDOR -A 1
+         DMI_SYS_VENDOR: VMware, Inc.
+       DMI_PRODUCT_NAME: VMware Virtual Platform
+
+The kernel ring buffer shows that total 130 *soft lockups* were detected on this system.
+
+Kernel Ring Buffer:
+
+crash> log | grep -c 'BUG: soft lockup'
+130
+
+A soft lockup is the symptom of a task or kernel thread using and not releasing a CPU for
+a longer period of time than allowed (The limit is set by the watchdog threshold in Sec).
+
+crash> softlockup_thresh
+softlockup_thresh = $1 = 60
+
+Refer: What is a CPU soft lockup ?
+https://access.redhat.com/articles/371803
+
+Notice that all the 'soft lockups' were detected on CPU 3 running 'sh' task PID (7861).
+
+crash> log | grep 'BUG: soft lockup' | sort | uniq -c
+    130 BUG: soft lockup - CPU#3 stuck for 67s! [sh:7861]
+
+crash> log | grep BUG | tail -n 5
+BUG: soft lockup - CPU#3 stuck for 67s! [sh:7861]
+BUG: soft lockup - CPU#3 stuck for 67s! [sh:7861]
+BUG: soft lockup - CPU#3 stuck for 67s! [sh:7861]
+BUG: soft lockup - CPU#3 stuck for 67s! [sh:7861]
+BUG: soft lockup - CPU#3 stuck for 67s! [sh:7861]
+
+crash> log | grep -oE 'find_get_pages' | sort | uniq -c
+    262 find_get_pages
+
+crash> log | grep -oE 'drop_caches_sysctl_handler\+.*' | sort | uniq -c
+    262 drop_caches_sysctl_handler+0x12e/0x1d0
+
+Let's verify the 'sh' task PID (7861):
+
+crash> set 7861
+    PID: 7861
+COMMAND: "sh"
+   TASK: ffff8801dac8a040  [THREAD_INFO: ffff880069a98000]
+    CPU: 3
+  STATE: TASK_RUNNING (ACTIVE)
+
+Backtrace of the 'sh' task PID (7861):
+
+crash> bt -S ffff880069a98000 7861
+PID: 7861   TASK: ffff8801dac8a040  CPU: 3   COMMAND: "sh"
+ #0 [ffff880069a98000] schedule at ffffffff81552d9a
+ #1 [ffff880069a9b3c0] mempool_alloc_slab at ffffffff81133715
+ #2 [ffff880069a9b3d0] mempool_alloc at ffffffff811338d9
+ #3 [ffff880069a9b4a0] mempool_alloc_slab at ffffffff81133715
+ #4 [ffff880069a9b4b0] mempool_alloc at ffffffff811338d9
+ #5 [ffff880069a9b550] __sg_alloc_table at ffffffff812afdc4
+ #6 [ffff880069a9b600] scsi_dma_map at ffffffff813aaf0b
+ #7 [ffff880069a9b650] mempool_alloc_slab at ffffffff81133715
+ #8 [ffff880069a9b660] mempool_alloc at ffffffff811338d9
+ #9 [ffff880069a9b700] cpumask_next_and at ffffffff8129d8f9
+#10 [ffff880069a9b720] find_busiest_group at ffffffff81065e24
+#11 [ffff880069a9b8b0] schedule at ffffffff81552de8
+#12 [ffff880069a9b9a0] move_freepages_block at ffffffff8113d017
+#13 [ffff880069a9b9f0] __rmqueue at ffffffff8113d133
+#14 [ffff880069a9bad0] free_pcppages_bulk at ffffffff811405b2
+#15 [ffff880069a9bba8] apic_timer_interrupt at ffffffff8155f13e
+#16 [ffff880069a9bc28] radix_tree_gang_lookup_slot at ffffffff812a4603
+#17 [ffff880069a9bca0] find_get_pages at ffffffff81130c0b
+#18 [ffff880069a9bd00] pagevec_lookup at ffffffff81147432
+#19 [ffff880069a9bd20] invalidate_mapping_pages at ffffffff81148f44
+#20 [ffff880069a9be10] drop_caches_sysctl_handler at ffffffff811cc2ee
+#21 [ffff880069a9be50] proc_sys_call_handler at ffffffff81213e9c
+#22 [ffff880069a9beb0] proc_sys_write at ffffffff81213ee4
+#23 [ffff880069a9bec0] vfs_write at ffffffff8119cb5a
+#24 [ffff880069a9bf00] sys_write at ffffffff8119d691
+#25 [ffff880069a9bf50] system_call_fastpath at ffffffff8155e351
+    RIP: 00000034356db7d0  RSP: 00007fff6361ff80  RFLAGS: 00010206
+    RAX: 0000000000000001  RBX: 0000000000000002  RCX: ffffffff8155e27e
+    RDX: 0000000000000002  RSI: 00007f2cbc93c000  RDI: 0000000000000001
+    RBP: 00007f2cbc93c000   R8: 000000000000000a   R9: 00007f2cbc919700
+    R10: 00000000ffffffff  R11: 0000000000000246  R12: 000000343598f040
+    R13: 0000000000000002  R14: 00007fff636207ec  R15: 0000000000000001
+    ORIG_RAX: 0000000000000001  CS: 0033  SS: 002b
+
+The 'sh' task PID (7861) running on CPU #3 is in the *loop* of drop caches code path.
+
+Here's the corresponding kernel source: mm/filemap.c
+...
+822 unsigned find_get_pages(struct address_space *mapping, pgoff_t start,
+823                             unsigned int nr_pages, struct page **pages)
+824 {
+825         unsigned int i;
+826         unsigned int ret;
+827         unsigned int nr_found;
+828
+829         rcu_read_lock();
+830 restart:
+831         nr_found = radix_tree_gang_lookup_slot(&mapping->page_tree,
+832                                 (void ***)pages, NULL, start, nr_pages);
+833         ret = 0;
+834         for (i = 0; i < nr_found; i++) {
+835                 struct page *page;
+836 repeat:
+837                 page = radix_tree_deref_slot((void **)pages[i]);
+838                 if (unlikely(!page))
+839                         continue;
+840
+841                 if (radix_tree_exception(page)) {
+842                         if (radix_tree_deref_retry(page)) {
+843                                 /*
+844                                  * Transient condition which can only trigger
+845                                  * when entry at index 0 moves out of or back
+846                                  * to root: none yet gotten, safe to restart.
+847                                  */
+848                                 WARN_ON(start | i);
+849                                 goto restart;
+850                         }
+851                         /*
+852                          * Otherwise, shmem/tmpfs must be storing a swap entry
+853                          * here as an exceptional entry: so skip over it -
+854                          * we only reach this from invalidate_mapping_pages().
+855                          */
+856                         continue;
+857                 }
+858
+859                 if (!page_cache_get_speculative(page))
+860                         goto repeat;
+861
+862                 /* Has the page moved? */
+863                 if (unlikely(page != *((void **)pages[i]))) {
+864                         page_cache_release(page);
+865                         goto repeat;
+...
+
+The parental hierarchy of the 'sh' task PID (7861) suggest that a 'cron' job is scheduled
+to drop the page cache periodically by executing 'echo 3 > /proc/sys/vm/drop_caches'.
+
+crash> ps -p 7861
+PID: 0      TASK: ffffffff81a97020  CPU: 0   COMMAND: "swapper"
+ PID: 1      TASK: ffff88023cfdd520  CPU: 0   COMMAND: "init"
+  PID: 2791   TASK: ffff8802342e6040  CPU: 2   COMMAND: "crond"
+   PID: 7860   TASK: ffff8801dac8b520  CPU: 3   COMMAND: "crond"
+    PID: 7861   TASK: ffff8801dac8a040  CPU: 3   COMMAND: "sh"
+
+crash> files 7861 -R drop_cache
+PID: 7861   TASK: ffff8801dac8a040  CPU: 3   COMMAND: "sh"
+ROOT: /    CWD: /root
+ FD       FILE            DENTRY           INODE       TYPE PATH
+  1 ffff8801ff7a0d80 ffff8801d7597840 ffff88008a196ab8 REG  /proc/sys/vm/drop_caches
+
+crash> p sysctl_drop_caches
+sysctl_drop_caches = $2 = 3
+
+The above evidences confirms that this system is hitting a known kernel bug ID #1565989[1].
+
+Root Cause:
+***********
+A patch that fixed a crash in clear_inode() function was previously added to RHEL-6 kernel.
+However, this patch introduced a side-effect where it was possible for an infinite loop and
+soft lockup to occur while using the drop_caches() interface  to reclaim  memory and if all
+page entries found by find_get_pages() function were all swap entries.
+
+Resolution:
+***********
+The fix of kernel bug ID #1565989[1] has been released and available for download.
+
+o Errata Link  : https://access.redhat.com/errata/RHSA-2018:1319
+o Package Name : kernel-2.6.32-696.28.1.el6.x86_64.rpm
+
+Recommendation:
+***************
+Update the kernel package to version '2.6.32-696.28.1.el6' or higher. This update provides
+a fix to both the inifinite loop and the soft lockup.
+
+Let me know if you have any questions.
+
+Regards,
+--
+Buland Singh
+Senior Software Maintenance Engineer
+
+[1] Bug 1565989 - host cycles in find_get_pages on 2.6.32-696.23.1.el6 [rhel-6.9.z]
+[2] softlockup in find_get_pages after installing kernel-2.6.32-696.23.1
+    https://access.redhat.com/solutions/3390081

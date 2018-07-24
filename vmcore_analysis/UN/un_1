@@ -1,0 +1,647 @@
+My name is Buland, I am a Software Maintenance Engineer from the *kernel* speciality group.
+
+The analysis of kernel crash dump indicates that this system was intentionally crashed via
+SysRq panic event (c) by pressing key combination [Alt + PrtSc + C].
+
+A detail investigation shows that:
+
+o The system was under high load and memory pressure.
+
+o The total number of CPUs on this system are 28 and the load average reached up to 5768.
+
+  - 32 Running/Runnable (RU) and 5764 Uninterruptable (UN) State tasks were contributing
+    to the high load average.
+  - The load was high mostly due to the large number of Uninterruptable State (UN) tasks.
+  - 5760 Uninterruptible State (UN) task were trying to free memory by shrinking the zone.
+
+o The system was running low on memory in Normal zone of Node 0.
+
+  - The total usable physical memory on this system is ~125.1 GiB.
+  - ~119.16 GiB of the physical memory is allocated to user-space applications.
+  - 'java' tasks were the largest consumer of the total physical memory (RSS).
+  - 'java' tasks were alone utilizing ~117.37 GiB of the total physical memory (RSS).
+  - 'java' tasks were running with the privilege of UID (1008) and GID (1007).
+  - 'java' tasks were also the largest consumer of swap memory.
+  - The workload was demanding ~94.5 GiB over the commit limit of ~1431.1 GiB of memory.
+
+o The evidences in the kernel crash dump are pointing towards.
+
+  - Memory over-commitment abuse due to an over-sized workload.
+  - High memory usage is user-space ('java' tasks).
+
+Here's an excerpt from the crash analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: tls-uh-mgmt01
+     RELEASE: 3.10.0-327.36.3.el7.x86_64
+       PANIC: "SysRq : Trigger a crash"
+
+crash> sys -i | grep -e DMI_SYS_VENDOR -A 1
+         DMI_SYS_VENDOR: LENOVO
+       DMI_PRODUCT_NAME: System x3650 M5: -[8871AC1]-
+
+The panic task is 'swapper' PID (0):
+
+crash> set -p
+    PID: 0
+COMMAND: "swapper/0"
+   TASK: ffffffff81951440  (1 of 28)  [THREAD_INFO: ffffffff8193c000]
+    CPU: 0
+  STATE: TASK_RUNNING (SYSRQ)
+
+crash> sysrq_enabled
+sysrq_enabled = $1 = 1
+
+The total number of CPUs on this system are 28 and load average reached upto 5768.
+
+crash> sys | grep -e CPUS -e LOAD
+        CPUS: 28
+LOAD AVERAGE: 5768.29, 5768.19, 5767.87
+
+The calculation of *load averages* includes TASK_UNINTERRUPTIBLE State (UN/D) and
+TASK_RUNNING State (RU) tasks.
+
+Total Numbers of Threads per State:
+
+crash> ps -S
+  RU: 32      /* TASK_RUNNING         */
+  UN: 5764    /* TASK_UNINTERRUPTIBLE */
+  IN: 10325   /* TASK_INTERRUPTIBLE   */
+  ZO: 4       /* EXIT_ZOMBIE          */
+
+Total 32 Running/Runnable State (RU) & 5764 Uninterruptable State (UN) tasks were
+contributing to the high load average on this system.
+
+List of Running/Runnable State (RU) tasks:
+
+crash> ps | grep "RU" |awk '{print $9$10}' | sort | uniq -c | sort -nr
+      1 [swapper/6]
+      1 [swapper/3]
+      1 [swapper/18]
+      1 java
+      1 8sshd
+      1 649000java
+      1 1112280java
+      1 0[swapper/9]
+      1 0[swapper/8]
+      1 0[swapper/7]
+      1 0[swapper/5]
+      1 0[swapper/4]
+      1 0[swapper/27]
+      1 0[swapper/26]
+      1 0[swapper/25]
+      1 0[swapper/24]
+      1 0[swapper/23]
+      1 0[swapper/22]
+      1 0[swapper/21]
+      1 0[swapper/20]
+      1 0[swapper/2]
+      1 0[swapper/19]
+      1 0[swapper/17]
+      1 0[swapper/16]
+      1 0[swapper/15]
+      1 0[swapper/14]
+      1 0[swapper/13]
+      1 0[swapper/12]
+      1 0[swapper/11]
+      1 0[swapper/10]
+      1 0[swapper/1]
+      1 0[swapper/0]
+
+List of Uninterruptable State (UN) tasks:
+
+crash> ps | grep UN | awk '{print $9}' | sort | uniq -c | sort -nr
+   5604 java
+     31 klzagent
+     23 mysqld
+     12 fcp_daemon
+      8 postgres
+      5 Timeout
+      5 mfefirewall
+      5 HipClient-bin
+      4 macompatsvc
+      4 dsmcad
+      4 crond
+      3 top
+      3 MA
+      3 kcawd
+      2 tuned
+      2 sshd
+      2 python2
+      2 OAS
+      2 Inbound
+      2 Default
+      1 [xfs-eofblocks/d]
+      1 TaskManager_1
+      1 systemd-logind
+      1 systemd-journal
+      1 systemd
+      1 su
+      1 Shared
+      1 Scheduled
+      1 rsyslogd
+      1 rhsmcertd
+      1 qmgr
+      1 python2.7
+      1 pickup
+      1 ntpd
+      1 NetworkManager
+      1 masvc
+      1 master
+      1 macmnsvc
+      1 [kworker/24:2H]
+      1 [kworker/17:0]
+      1 [kworker/13:2]
+      1 [kworker/13:1]
+      1 [kworker/0:2]
+      1 [kworker/0:0]
+      1 [kthreadd]
+      1 KM
+      1 JIT
+      1 [jbd2/sdc1-8]
+      1 isectpd
+      1 isecespd
+      1 irqbalance
+      1 in:imjournal
+      1 hipus
+      1 HipMon
+      1 Executor
+      1 auditd
+      1 atd
+      1 Active
+
+The load was high due to the large number of Uninterruptable State (UN) tasks.
+
+List of top ten Uninterruptable State (UN) tasks with their corresponding time-stamp:
+
+crash> ps -m | grep UN | tail
+[ 0 00:00:00.100] [UN]  PID: 9179   TASK: ffff880109a75080  CPU: 0   COMMAND: "java"
+[ 0 00:00:00.100] [UN]  PID: 30870  TASK: ffff88003d4ac500  CPU: 0   COMMAND: "java"
+[ 0 00:00:00.100] [UN]  PID: 6347   TASK: ffff880d9f0e1700  CPU: 0   COMMAND: "java"
+[ 0 00:00:00.100] [UN]  PID: 24388  TASK: ffff8810d5eea280  CPU: 0   COMMAND: "java"
+[ 0 00:00:00.101] [UN]  PID: 17518  TASK: ffff88050de7e780  CPU: 0   COMMAND: "java"
+[ 0 00:00:00.101] [UN]  PID: 6706   TASK: ffff8813a37b2280  CPU: 0   COMMAND: "java"
+[ 0 00:00:00.101] [UN]  PID: 26324  TASK: ffff880018d3f300  CPU: 0   COMMAND: "java"
+[ 0 22:55:28.618] [UN]  PID: 15027  TASK: ffff88012a156780  CPU: 13  COMMAND: "kworker/13:1"
+[ 0 22:55:28.744] [UN]  PID: 17698  TASK: ffff880cea368b80  CPU: 24  COMMAND: "kworker/24:2H"
+[ 0 22:56:44.360] [UN]  PID: 7726   TASK: ffff88011573a280  CPU: 0   COMMAND: "kworker/0:0"
+
+Let's verify why these tasks were blocked in Uninterruptible State (UN):
+
+'kworker/0:0' thread PID (7726) is the oldest one blocked in Uninterruptible State (UN).
+
+crash> set 7726
+    PID: 7726
+COMMAND: "kworker/0:0"
+   TASK: ffff88011573a280  [THREAD_INFO: ffff880135a94000]
+    CPU: 0
+  STATE: TASK_UNINTERRUPTIBLE
+
+It has been in Uninterruptible State (UN) for ~22 Hours, 56 Minutes and 44 Seconds.
+
+crash> ps -m 7726
+[ 0 22:56:44.360] [UN]  PID: 7726   TASK: ffff88011573a280  CPU: 0   COMMAND: "kworker/0:0"
+
+Backtrace of 'kworker/0:0' task PID (7726):
+
+crash> bt
+PID: 7726   TASK: ffff88011573a280  CPU: 0   COMMAND: "kworker/0:0"
+ #0 [ffff880135a97b90] __schedule at ffffffff8163b49d
+ #1 [ffff880135a97bf8] schedule at ffffffff8163bb39
+ #2 [ffff880135a97c08] schedule_timeout at ffffffff81639829
+ #3 [ffff880135a97cb8] wait_for_completion at ffffffff8163bf06
+ #4 [ffff880135a97d18] kthread_create_on_node at ffffffff810a5a28
+ #5 [ffff880135a97dd0] create_worker at ffffffff8109da7a
+ #6 [ffff880135a97e20] manage_workers at ffffffff8109dd76
+ #7 [ffff880135a97e68] worker_thread at ffffffff8109e689
+ #8 [ffff880135a97ec8] kthread at ffffffff810a5b8f
+ #9 [ffff880135a97f50] ret_from_fork at ffffffff81646a98
+
+'kworker/0:0' thread PID (7726) was waiting for the completion of a worker thread.
+
+crash> p kthreadd_task
+kthreadd_task = $2 = (struct task_struct *) 0xffff881fd2ca8b80
+crash> task_struct.pid -ox
+struct task_struct {
+  [0x4a4] pid_t pid;
+}
+
+crash> task_struct.pid 0xffff881fd2ca8b80
+  pid = 2
+
+The worker thread is 'kthreadd' PID (2):
+
+crash> set 2
+    PID: 2
+COMMAND: "kthreadd"
+   TASK: ffff881fd2ca8b80  [THREAD_INFO: ffff881fd2d28000]
+    CPU: 9
+  STATE: TASK_UNINTERRUPTIBLE
+
+Backtrace of 'kthreadd' thread PID (2):
+
+crash> bt
+PID: 2      TASK: ffff881fd2ca8b80  CPU: 9   COMMAND: "kthreadd"
+ #0 [ffff881fd2d2b760] __schedule at ffffffff8163b49d
+ #1 [ffff881fd2d2b7c8] schedule at ffffffff8163bb39
+ #2 [ffff881fd2d2b7d8] schedule_timeout at ffffffff81639795
+ #3 [ffff881fd2d2b888] io_schedule_timeout at ffffffff8163b16e
+ #4 [ffff881fd2d2b8b8] congestion_wait at ffffffff8118a7f2
+ #5 [ffff881fd2d2b918] shrink_inactive_list at ffffffff8117e4ec
+ #6 [ffff881fd2d2b9e0] shrink_lruvec at ffffffff8117ee45
+ #7 [ffff881fd2d2bae0] shrink_zone at ffffffff8117f2a6
+ #8 [ffff881fd2d2bb38] do_try_to_free_pages at ffffffff8117f7b0
+ #9 [ffff881fd2d2bbb0] try_to_free_pages at ffffffff8117fc9c
+#10 [ffff881fd2d2bc48] __alloc_pages_nodemask at ffffffff81173998
+#11 [ffff881fd2d2bd80] copy_process at ffffffff81078dd3
+#12 [ffff881fd2d2be08] do_fork at ffffffff8107a461
+#13 [ffff881fd2d2be78] kernel_thread at ffffffff8107a6c6
+#14 [ffff881fd2d2be88] kthreadd at ffffffff810a6692
+#15 [ffff881fd2d2bf50] ret_from_fork at ffffffff81646a98
+
+'kthreadd' thread PID (2) was trying to reclaim memory by shrinking memory zone.
+
+Kernel Source: mm/vmscan.c
+....
+1388 /*
+1389  * shrink_inactive_list() is a helper for shrink_zone().  It returns the number
+1390  * of reclaimed pages
+1391  */
+1392 static noinline_for_stack unsigned long
+1393 shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
+1394                      struct scan_control *sc, enum lru_list lru)
+1395 {
+1396         LIST_HEAD(page_list);
+1397         unsigned long nr_scanned;
+1398         unsigned long nr_reclaimed = 0;
+1399         unsigned long nr_taken;
+1400         unsigned long nr_dirty = 0;
+1401         unsigned long nr_congested = 0;
+1402         unsigned long nr_unqueued_dirty = 0;
+1403         unsigned long nr_writeback = 0;
+1404         unsigned long nr_immediate = 0;
+1405         isolate_mode_t isolate_mode = 0;
+1406         int file = is_file_lru(lru);
+1407         struct zone *zone = lruvec_zone(lruvec);
+1408         struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
+1409
+1410         while (unlikely(too_many_isolated(zone, file, sc))) {
+1411                 congestion_wait(BLK_RW_ASYNC, HZ/10);
+....
+
+5760 Uninterruptible State (UN) tasks were trying to free memory by shrinking the zone.
+
+crash> foreach UN bt | egrep -e 'try_to_free_pages' -e 'shrink_zone' | awk '{print($3)}' | sort | uniq -c | sort -nk1
+   5760 do_try_to_free_pages
+   5760 shrink_zone
+   5760 try_to_free_pages
+
+o try_to_free_pages is invoked if the kernel detects an acute shortage of memory
+  during an operation. It check all pages in the _current_ memory zone and frees
+  those least frequently needed.
+
+o shrink_zone is the entry point for removing rarely  used pages from memory and
+  is called from within the periodical kswapd mechanism.
+
+This method is responsible for two things:
+
+o It attempts to maintain a balance  between the  number of active and inactive
+  pages in a zone by moving pages between the active  and inactive lists (using
+  shrink_active_list).
+
+o It also controls the release of a selectable number  of the pages by means of
+  shrink_cache.shrink_zone acts as a go-between the logic that defines how many
+  pages of a zone are to be swapped out and the decision as to which page these
+  are.
+
+The 'NR_FREE_PAGES' in ZONE_NORMAL of Node 0 are below 'MIN' watermark.
+
+Normal zone information of Node 0:
+
+crash> kmem -z | grep -e Normal -A 3
+NODE: 0  ZONE: 2  ADDR: ffff88207ffd6000  NAME: "Normal"
+  SIZE: 33030144  MIN/LOW/HIGH: 16751/20938/25126
+  VM_STAT:
+                NR_FREE_PAGES: 16624
+
+It means the minimum requirement of memory (min) is greater than available memory (free)
+in Normal Zone (ZONE_NORMAL) of Node 0.
+
+The analysis of memory utilization indicates that this system was utilizing almost ~100%
+of physical memory and 100% of swap memory.
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  32786151     125.1 GB         ----
+         FREE    147149     574.8 MB    0% of TOTAL MEM
+         USED  32639002     124.5 GB   99% of TOTAL MEM
+       SHARED     89449     349.4 MB    0% of TOTAL MEM
+      BUFFERS       859       3.4 MB    0% of TOTAL MEM
+       CACHED    250640     979.1 MB    0% of TOTAL MEM
+         SLAB    480020       1.8 GB    1% of TOTAL MEM
+
+   TOTAL HUGE         0            0         ----
+    HUGE FREE         0            0    0% of TOTAL HUGE
+
+   TOTAL SWAP   8387583        32 GB         ----
+    SWAP USED   8387583        32 GB  100% of TOTAL SWAP
+    SWAP FREE         0            0    0% of TOTAL SWAP
+
+ COMMIT LIMIT  24780658      94.5 GB         ----
+    COMMITTED 375156409    1431.1 GB  1513% of TOTAL LIMIT
+
+The actual committed memory exceed the commit limit of ~94.5 GiB by ~1318.6 GiB.
+
+The total memory allocated to user-space process(es) is ~119.16 GiB.
+
+crash> ps -u -G | sed 's/>//g' | awk '{ total += $8 } END { printf "Total RSS of user-mode: %.02f GiB\n", total/2^20 }'
+Total RSS of user-mode: 119.16 GiB
+
+'java' tasks were the largest consumer of physical memory (Resident Set Size).
+
+List of user-space tasks and their corresponding memory usage (RSS):
+
+crash> ps -Gu | sed 's/^>//' | awk '{ m[$9]+=$8 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+                java  123077252 KiB
+                 OAS     296416 KiB
+          ScanAction     286004 KiB
+                Scan     285992 KiB
+            postgres     254292 KiB
+         macompatsvc     177304 KiB
+                  su     133476 KiB
+               crond     108068 KiB
+                bash      87812 KiB
+             python2      49504 KiB
+     systemd-journal      47708 KiB
+             isectpd      33372 KiB
+            rsyslogd      23964 KiB
+            klzagent      23276 KiB
+              mysqld      16300 KiB
+           python2.7      14692 KiB
+                 top       6924 KiB
+               masvc       5152 KiB
+          fcp_daemon       4984 KiB
+       HipClient-bin       2716 KiB
+             systemd       2700 KiB
+         mfefirewall       2028 KiB
+               hipus       1364 KiB
+                sshd       1204 KiB
+              pickup       1036 KiB
+      NetworkManager        972 KiB
+            isecespd        872 KiB
+            macmnsvc        752 KiB
+                 awk        704 KiB
+      ambari-sudo.sh        636 KiB
+               tuned        584 KiB
+                ntpd        584 KiB
+                grep        572 KiB
+         dbus-daemon        480 KiB
+             polkitd        472 KiB
+      systemd-logind        440 KiB
+               kcawd        352 KiB
+              dsmcad        332 KiB
+              auditd        200 KiB
+          irqbalance        188 KiB
+                qmgr        144 KiB
+       systemd-udevd        100 KiB
+           rhsmcertd         92 KiB
+              master         80 KiB
+              HipMon         48 KiB
+                 atd         28 KiB
+                sudo         16 KiB
+      wpa_supplicant          8 KiB
+         mysqld_safe          8 KiB
+             lvmetad          8 KiB
+               login          8 KiB
+                  sh          4 KiB
+                COMM          0 KiB
+
+'java' tasks were alone utilizing ~117.37 GiB of the total physical memory.
+
+crash> ps -Gu java | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 " GB"}'
+total 117.376 GB
+
+'java' tasks were also the largest consumer of swap memory.
+
+List of user-space tasks and their corresponding swap usage:
+
+crash> pswap -Gk | awk '{ m[$3]+=$2 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+                java   27318020 KiB
+         macompatsvc    2859200 KiB
+             systemd     439920 KiB
+               crond     143164 KiB
+            postgres      84636 KiB
+              mysqld      68336 KiB
+                  su      32036 KiB
+                bash      24616 KiB
+             python2      23752 KiB
+            klzagent      21192 KiB
+               masvc      19272 KiB
+              dsmcad      13480 KiB
+               tuned      12188 KiB
+          fcp_daemon      10904 KiB
+             polkitd       7140 KiB
+       HipClient-bin       6432 KiB
+                sshd       5272 KiB
+         mfefirewall       4416 KiB
+            isecespd       3692 KiB
+      NetworkManager       3228 KiB
+               kcawd       3200 KiB
+           python2.7       2804 KiB
+       systemd-udevd       2776 KiB
+     systemd-journal       2224 KiB
+             lvmetad       1628 KiB
+            rsyslogd       1548 KiB
+                sudo       1408 KiB
+              master        956 KiB
+            macmnsvc        956 KiB
+                qmgr        936 KiB
+                 top        844 KiB
+      systemd-logind        736 KiB
+               login        636 KiB
+      wpa_supplicant        588 KiB
+               hipus        492 KiB
+                 OAS        352 KiB
+              auditd        312 KiB
+             isectpd        308 KiB
+         mysqld_safe        292 KiB
+         dbus-daemon        212 KiB
+                  sh        204 KiB
+          irqbalance        184 KiB
+                 atd        184 KiB
+              HipMon         88 KiB
+           rhsmcertd         76 KiB
+          ScanAction         64 KiB
+                Scan         64 KiB
+              pickup          0 KiB
+                ntpd          0 KiB
+                grep          0 KiB
+                COMM          0 KiB
+                 awk          0 KiB
+      ambari-sudo.sh          0 KiB
+
+Threads of 'java' task were running with the privilege of UID (1008) & GID (1007).
+
+crash> set 478
+    PID: 478
+COMMAND: "java"
+   TASK: ffff8800427f2280  [THREAD_INFO: ffff880014d44000]
+    CPU: 15
+  STATE: TASK_INTERRUPTIBLE
+
+crash> task -R mm
+PID: 478    TASK: ffff8800427f2280  CPU: 15  COMMAND: "java"
+  mm = 0xffff881fce2e5780,
+
+crash> mm_struct.exe_file 0xffff881fce2e5780
+  exe_file = 0xffff880014d58700
+
+crash>  struct file.f_path.dentry 0xffff880014d58700
+  f_path.dentry = 0xffff881fcc877500
+
+crash> files -d 0xffff881fcc877500
+     DENTRY           INODE           SUPERBLK     TYPE PATH
+ffff881fcc877500 ffff881fb61bc178 ffff881fcdfcf800 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/bin/java
+
+PID, UID and GID of 'java' task.
+
+crash> task_struct.pid 0xffff8800427f2280
+  pid = 478
+
+crash> task_struct.cred 0xffff8800427f2280
+  cred = 0xffff88010140a000
+
+crash> cred.uid,gid 0xffff88010140a000
+  uid = {
+    val = 1008
+  }
+  gid = {
+    val = 1007
+  }
+
+Parent process hierarchy of 'java' task PID (478):
+
+crash> ps -p 478
+PID: 0      TASK: ffffffff81951440  CPU: 0   COMMAND: "swapper/0"
+ PID: 1      TASK: ffff881fd2ca8000  CPU: 27  COMMAND: "systemd"
+  PID: 1195   TASK: ffff881fb9004500  CPU: 12  COMMAND: "crond"
+   PID: 32605  TASK: ffff880f2a6a4500  CPU: 10  COMMAND: "crond"
+    PID: 32609  TASK: ffff880025577300  CPU: 2   COMMAND: "su"
+     PID: 472    TASK: ffff880039aed080  CPU: 2   COMMAND: "bash"
+      PID: 473    TASK: ffff880039ae8b80  CPU: 9   COMMAND: "bash"
+       PID: 478    TASK: ffff8800427f2280  CPU: 15  COMMAND: "java"
+
+List of some of the open files by 'java' task PID (478):
+
+crash> files 478
+PID: 478    TASK: ffff8800427f2280  CPU: 15  COMMAND: "java"
+ROOT: /    CWD: /home/spark/sparkwork/applications/perfDataWriter
+ FD       FILE            DENTRY           INODE       TYPE PATH
+  0 ffff88003e3efc00 ffff88097fe238c0 ffff881fd05ea750 FIFO
+  1 ffff88003e21d700 ffff88141b0a4600 ffff88055f757b80 REG  /hadoop/sparklogs/perfDataWriter-application-log.out
+  2 ffff88003e21cd00 ffff880fe39a5200 ffff88055f751528 REG  /hadoop/sparklogs/perfDataWriter-log.out
+  3 ffff880a0fc70a00 ffff881fb606a9c0 ffff881fb0131f78 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/jre/lib/rt.jar
+  4 ffff880a0fc71f00 ffff881fcc8c3b00 ffff881fb00c80b0 REG  /usr/iop/4.2.0.0/spark/lib/spark-assembly-1.6.1_IBM_4-hadoop2.7.2-IBM-12.jar
+  5 ffff8816c17dc800 ffff8816a4656900 ffff88018c5daab0 SOCK UNIX
+  6 ffff8801097a9600 ffff881fb85bfbc0 ffff881fb85eb5e8 REG  /usr/iop/4.2.0.0/spark/lib/datanucleus-core-3.2.10.jar
+  7 ffff880040a16e00 ffff881fb8770900 ffff881fb01700b0 REG  /usr/iop/4.2.0.0/spark/lib/datanucleus-api-jdo-3.2.6.jar
+  8 ffff8801097a8a00 ffff881fb00bb200 ffff881fc1d08cf8 REG  /usr/iop/4.2.0.0/spark/lib/datanucleus-rdbms-3.2.9.jar
+  9 ffff880486466600 ffff8811a05e00c0 ffff880394c02fb0 SOCK UNIX
+ 10 ffff8808f8148000 ffff881fcc370540 ffff881fb61bac38 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/jre/lib/jsse.jar
+ 11 ffff880164e84000 ffff881ffec0a540 ffff881fd215d2f0 CHR  /dev/random
+ 12 ffff880164e84200 ffff881ffec0a600 ffff881fd215d598 CHR  /dev/urandom
+ 13 ffff880164e84700 ffff881ffec0a540 ffff881fd215d2f0 CHR  /dev/random
+ 14 ffff880164e84300 ffff881ffec0a540 ffff881fd215d2f0 CHR  /dev/random
+ 15 ffff880164e84d00 ffff881ffec0a600 ffff881fd215d598 CHR  /dev/urandom
+ 16 ffff880164e85c00 ffff881ffec0a600 ffff881fd215d598 CHR  /dev/urandom
+ 19 ffff880131d58c00 ffff880e50b3cfc0 ffff880002c84178 REG  /home/spark/sparkwork/applications/perfDataWriter/config/MQConfig.properties
+ 21 ffff880131d58000 ffff88010846fe00 ffff8802d57651b0 SOCK UNIX
+ 24 ffff880c5fc9f600 ffff881fcc856fc0 ffff881fb61ba7f8 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/jre/lib/jce.jar
+ 25 ffff880c5fc9e400 ffff881fcc8c2180 ffff881fc98e23b8 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/jre/lib/ext/sunec.jar
+ 26 ffff880c5fc9f800 ffff881fcc8c35c0 ffff881fc98e27f8 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/jre/lib/ext/sunpkcs11.jar
+ 27 ffff881fceedc700 ffff881fcc1b9380 ffff881fb61f8e78 REG  /usr/jdk64/java-1.8.0-openjdk-1.8.0.77-0.b03.el7_2.x86_64/jre/lib/ext/sunjce_provider.jar
+ 28 ffff880d78b41200 ffff8802504c2600 ffff880b3e95d6b8 REG  /home/spark/sparkwork/applications/perfDataWriter/perfDataWriter.jar
+ 29 ffff880d78b41d00 ffff8805b6d68780 ffff880b3e9592b8 REG  /home/spark/sparkwork/applications/perfDataWriter/lib/MQCredentialUtil.jar
+ 30 ffff88012f13de00 ffff880b4650b980 ffff881fb02d9b38 REG  /home/spark/sparkwork/mqjars/com.ibm.dhbcore.jar
+ 31 ffff88012f13cb00 ffff880b4650b740 ffff881fb000f038 REG  /home/spark/sparkwork/mqjars/com.ibm.mq.commonservices.jar
+ 32 ffff8801196d7500 ffff880b4650bd40 ffff881fb000f478 REG  /home/spark/sparkwork/mqjars/com.ibm.mq.headers.jar
+ 33 ffff880381f67500 ffff880b4650a600 ffff881fb000f8b8 REG  /home/spark/sparkwork/mqjars/com.ibm.mq.jar
+ 34 ffff88018cbaa300 ffff880b4650a540 ffff881fb02da7f8 REG  /home/spark/sparkwork/mqjars/com.ibm.mq.pcf.jar
+ 35 ffff88003e347900 ffff880b4650b8c0 ffff881fb02d9f78 REG  /home/spark/sparkwork/mqjars/com.ibm.mq.jmqi.jar
+ 36 ffff881de3771e00 ffff880d57ee49c0 ffff881fb02db4b8 REG  /home/spark/sparkwork/mqjars/jta.jar
+ 37 ffff881de3770f00 ffff880b4650b800 ffff881fb02da3b8 REG  /home/spark/sparkwork/mqjars/com.ibm.mqjms.jar
+ 38 ffff8813f0735300 ffff880c5bd82900 ffff881fb000fcf8 REG  /home/spark/sparkwork/mqjars/fscontext.jar
+ 39 ffff8800257ef200 ffff880b4650a3c0 ffff881fb02dac38 REG  /home/spark/sparkwork/mqjars/connector.jar
+ 40 ffff880292fc7a00 ffff880d57ee5b00 ffff881fb02db078 REG  /home/spark/sparkwork/mqjars/guava-15.0-rc1.jar
+ 41 ffff880292fc7500 ffff880d57ee5680 ffff881fb03101b8 REG  /home/spark/sparkwork/mqjars/javax.jms.jar
+ 42 ffff8800408b4800 ffff880e50b3cfc0 ffff880002c84178 REG  /home/spark/sparkwork/applications/perfDataWriter/config/MQConfig.properties
+ 43 ffff8801120df200 ffff880a758af200 ffff880ab452f8b8 REG  /home/spark/sparkwork/applications/mqjars/spark-mq-jms-custom-connector_2.10-0.0.1-SNAPSHOT.jar
+ 44 ffff88003e11a000 ffff881fb0302180 ffff881fb85ebe18 REG  /usr/iop/4.2.0.0/hbase/lib/hbase-client-1.2.0-IBM-7.jar
+ 45 ffff88003e11bc00 ffff881fb0208900 ffff881fc1d49110 REG  /usr/iop/4.2.0.0/hbase/lib/hbase-common-1.2.0-IBM-7.jar
+ 46 ffff88003e11b000 ffff881fb02089c0 ffff881fc1d49528 REG  /usr/iop/4.2.0.0/hbase/lib/protobuf-java-2.5.0.jar
+ 47 ffff88003e11b600 ffff881fb0208a80 ffff881fc1d49940 REG  /usr/iop/4.2.0.0/hbase/lib/hbase-protocol-1.2.0-IBM-7.jar
+ 48 ffff88003e11a100 ffff881fb0302840 ffff881fb85eca60 REG  /usr/iop/4.2.0.0/zookeeper/zookeeper-3.4.6_IBM_4.jar
+ 49 ffff88003e11ab00 ffff881fb0302900 ffff881fb85ece78 REG  /usr/iop/4.2.0.0/hbase/lib/hbase-server-1.2.0-IBM-7.jar
+ 50 ffff88003e11b100 ffff880a05705500 ffff881fb030b4b8 REG  /home/spark/sparkwork/mqjars/spark-hbase-connector_2.10-1.0.3.jar
+ 51 ffff88011b0b0800 ffff880a05705b00 ffff881fb02d3d38 REG  /home/spark/sparkwork/mqjars/spark-jms-receiver-0.1.2-s_2.11.jar
+ 52 ffff881291ea5700 ffff880a05704540 ffff881fb02db8f8 REG  /home/spark/sparkwork/mqjars/spark-mq-jms-receiver_2.11-0.0.1-SNAPSHOT.jar
+ 53 ffff880025708300 ffff881fb02be900 ffff881fc1d09528 REG  /usr/iop/4.2.0.0/hadoop/hadoop-common-2.7.2-IBM-12.jar
+ 54 ffff880025708400 ffff881d83656840 ffff881fb02dbd38 REG  /home/spark/sparkwork/metrics-core-2.1.2.jar
+ 55 ffff8801e92b6100 ffff881ee89e5ec0 ffff880b401423b8 REG  /home/spark/.ivy2/jars/com.databricks_spark-csv_2.10-1.5.0.jar
+ 56 ffff880295698a00 ffff881ee89e4fc0 ffff880b401416f8 REG  /home/spark/.ivy2/jars/org.apache.commons_commons-csv-1.1.jar
+ 57 ffff880a39564500 ffff881ee89e4780 ffff880b40141b38 REG  /home/spark/.ivy2/jars/com.univocity_univocity-parsers-1.5.1.jar
+ 59 ffff8816c17dd400 ffff8816a4657d40 ffff88018c5da0b0 SOCK UNIX
+ 61 ffff880139652200 ffff881f60ba2c00 ffff881fbd775970 FIFO
+ 62 ffff880139653100 ffff881f60ba2c00 ffff881fbd775970 FIFO
+ 63 ffff880139653300 ffff881f60ba3500 ffff881ffefe0000 UNKN [eventpoll]
+
+The resource limits of 'java' task PID (478):
+
+crash> ps -r 478
+PID: 478    TASK: ffff8800427f2280  CPU: 15  COMMAND: "java"
+      RLIMIT     CURRENT       MAXIMUM
+         CPU   (unlimited)   (unlimited)
+       FSIZE   (unlimited)   (unlimited)
+        DATA   (unlimited)   (unlimited)
+       STACK     8388608     (unlimited)
+        CORE   (unlimited)   (unlimited)
+         RSS   (unlimited)   (unlimited)
+       NPROC      16000         16000
+      NOFILE      32000         32000
+     MEMLOCK      65536         65536
+          AS   (unlimited)   (unlimited)
+       LOCKS   (unlimited)   (unlimited)
+  SIGPENDING     511554        511554
+    MSGQUEUE     819200        819200
+        NICE        0             0
+      RTPRIO        0             0
+      RTTIME   (unlimited)   (unlimited)
+
+Recommendations:
+****************
+[0x1] Check for any possibility of memory leak in the application using 'java.
+
+*OR*
+
+[0x1] Limit the memory utilization of 'java' task using RLIMIT or cgroup.
+
+Using RLIMIT facility:
+
+Refer: How to limit memory usage per process ?
+https://access.redhat.com/site/solutions/30555
+
+Using Cgroup facility:
+
+how to handle cgroup with service unit of systemd on RHEL7
+https://access.redhat.com/solutions/2540101
+
+*OR*
+
+[0x1] Increase the physical memory to handle the current workload.
+
+*AND*
+
+[0x2] If possible, update the kernel package to latest version (I.E 3.10.0-862.6.3.el7).
+      It contains multiple bug/security fixes and enhancements.

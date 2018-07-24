@@ -1,7 +1,7 @@
 您好！
 感谢您使用红帽全球技术支持服务！
 
-1. 在可以连接至外网的测试环境，注册至红帽RHN网络：
+1. 在可以连接至外网的测试环境，注册至红帽RHSM网络：
 https://access.redhat.com/labs/registrationassistant/?intcmp=hp|a|a2|regassist&#/
 
 2. yum repolist可以看到repo id

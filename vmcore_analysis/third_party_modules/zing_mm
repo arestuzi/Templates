@@ -1,0 +1,129 @@
+The analysis of kernel crash dump indicates that the panic occurred in zm_assert() function
+of an unsigned (U) kernel module [zing_mm] due to BUG_ON() condition.
+
+Here's an excerpt from the analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: ah-1011152-001.sdi.corp.bankofamerica.com
+     RELEASE: 3.10.0-862.el7.x86_64
+       PANIC: "kernel BUG at /usr/src/zing_mm-5.20.1.0-3/zm_adapter.c:883!"
+
+crash> sys -i | grep -e DMI_PRODUCT_NAME -B 1
+         DMI_SYS_VENDOR: VMware, Inc.
+       DMI_PRODUCT_NAME: VMware Virtual Platform
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+[611643.435671] kernel BUG at /usr/src/zing_mm-5.20.1.0-3/zm_adapter.c:883!
+[611643.435988] invalid opcode: 0000 [#1] SMP
+[..]
+
+The panic task is 'java' PID (16829):
+
+crash> set -p
+    PID: 16829
+COMMAND: "java"
+   TASK: ffff94303b2b8fd0  [THREAD_INFO: ffff943b992d8000]
+    CPU: 0
+  STATE: TASK_RUNNING (PANIC)
+
+Backtrace of the panic task:
+
+crash> bt
+PID: 16829  TASK: ffff94303b2b8fd0  CPU: 0   COMMAND: "java"
+ #0 [ffff943b992db8a0] machine_kexec at ffffffff8c260b2a
+ #1 [ffff943b992db900] __crash_kexec at ffffffff8c313402
+ #2 [ffff943b992db9d0] crash_kexec at ffffffff8c3134f0
+ #3 [ffff943b992db9e8] oops_end at ffffffff8c917768
+ #4 [ffff943b992dba10] die at ffffffff8c22e96b
+ #5 [ffff943b992dba40] do_trap at ffffffff8c916eb0
+ #6 [ffff943b992dba90] do_invalid_op at ffffffff8c22b284
+ #7 [ffff943b992dbb40] invalid_op at ffffffff8c922b2e
+    [exception RIP: zm_assert+41]
+    RIP: ffffffffc08e2c69  RSP: ffff943b992dbbf0  RFLAGS: 00010246
+    RAX: 00000000000000b6  RBX: ffff943b5739be00  RCX: 0000000000000000
+    RDX: 0000000000000000  RSI: ffff943bbfc13938  RDI: ffff943bbfc13938
+    RBP: ffff943b992dbbf0   R8: 0000000000000000   R9: ffff943bbc347ac0
+    R10: 0000000000000747  R11: ffffbab7c74a79d8  R12: 0000000000000000
+    R13: 00000000000186a3  R14: 0000000000000000  R15: 0000000000000000
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+ #8 [ffff943b992dbbf8] az_vmem_exit_mm at ffffffffc08ebaf4 [zing_mm]
+ #9 [ffff943b992dbc38] az_exit_mms at ffffffffc08e52e0 [zing_mm]
+#10 [ffff943b992dbc48] zm_mms_cleanup at ffffffffc08e0f54 [zing_mm]
+#11 [ffff943b992dbc98] zm_exit_mmap at ffffffffc08e10ff [zing_mm]
+#12 [ffff943b992dbcc0] mmput at ffffffff8c28e0f7
+#13 [ffff943b992dbce0] do_exit at ffffffff8c297795
+#14 [ffff943b992dbd78] do_group_exit at ffffffff8c297fcf
+#15 [ffff943b992dbda8] get_signal_to_deliver at ffffffff8c2a887e
+#16 [ffff943b992dbe40] do_signal at ffffffff8c22a527
+#17 [ffff943b992dbf30] do_notify_resume at ffffffff8c22ac22
+#18 [ffff943b992dbf50] int_signal at ffffffff8c91fb1a
+    RIP: 00007f920af22e59  RSP: 00007f91d16d3ce8  RFLAGS: 00000246
+    RAX: fffffffffffffdfc  RBX: 0000000000000000  RCX: ffffffffffffffff
+    RDX: 0000000100000000  RSI: 0000000000000089  RDI: 00007f920ae1a818
+    RBP: 00007f91d16d3d40   R8: 0000000000000000   R9: 00000000ffffffff
+    R10: 00007f91d16d3d10  R11: 0000000000000246  R12: 00007f920adef748
+    R13: 00007f920ae1a800  R14: 0000000000000000  R15: 20c49ba5e353f7cf
+    ORIG_RAX: 00000000000000ca  CS: 0033  SS: 002b
+
+Dis-assembly of exception RIP: <zm_assert+41>
+
+crash> dis -rl zm_assert+41
+0xffffffffc08e2c40 <zm_assert>:	nopl   0x0(%rax,%rax,1) [FTRACE NOP]
+0xffffffffc08e2c45 <zm_assert+5>:	test   %edi,%edi
+0xffffffffc08e2c47 <zm_assert+7>:	je     0xffffffffc08e2c4b <zm_assert+11>
+0xffffffffc08e2c49 <zm_assert+9>:	repz retq
+0xffffffffc08e2c4b <zm_assert+11>:	push   %rbp
+0xffffffffc08e2c4c <zm_assert+12>:	mov    %edx,%ecx
+0xffffffffc08e2c4e <zm_assert+14>:	mov    %rsi,%rdx
+0xffffffffc08e2c51 <zm_assert+17>:	mov    0x12550(%rip),%rsi        # 0xffffffffc08f51a8
+0xffffffffc08e2c58 <zm_assert+24>:	mov    $0xffffffffc08f3728,%rdi
+0xffffffffc08e2c5f <zm_assert+31>:	xor    %eax,%eax
+0xffffffffc08e2c61 <zm_assert+33>:	mov    %rsp,%rbp
+0xffffffffc08e2c64 <zm_assert+36>:	callq  0xffffffff8c907ba1 <printk>
+0xffffffffc08e2c69 <zm_assert+41>:	ud2
+                                         ^
+                                         '..../* kernel crashed here */
+
+The function zm_assert() is the part of an unsigned (U) module [zing_mm].
+
+crash> sym zm_assert
+ffffffffc08e2c40 (t)    zm_assert [zing_mm]
+                           ^            ^
+                           |            |
+                           +            +
+[ Function within the module code ] [ Module name ]
+
+Details of an unsigned (U) kernel module: [zing_mm]
+
+crash> mod -t
+NAME     TAINTS
+zing_mm  OE
+
+crash> mod | grep -e NAME -e zing_mm
+     MODULE       NAME                         SIZE  OBJECT FILE
+ffffffffc08f51c0  zing_mm                   9980173  (not loaded)  [CONFIG_KALLSYMS]
+
+crash> module.state,name,version,srcversion 0xffffffffc08f51c0
+  state      = MODULE_STATE_LIVE
+  name       = "zing_mm\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+  version    = 0x0
+  srcversion = 0xffff943bb5278c80 "0788926E4D2BDD56B16BE77"
+
+The [zing_mm] kernel module is shipped by Azul Systems.
+
+The above evidences suggest that there an *issue* within unsigned (U) module [zing_mm].
+Since Red Hat does *not* have the  source code of this module for detail investigation,
+a case would need to be opened with the provider of [zing_mm] module for investigation.
+
+Recommendations:
+****************
+[0x1] Open a service request with Azul Systems support and take their opinion on this issue.
+[0x2] Check for any patches they have developed for this issue.
+
+Refer: Kernel panic due to hitting a bug in the following modules zm_assert(),az_vmem_exit_mm().
+https://access.redhat.com/solutions/3330231

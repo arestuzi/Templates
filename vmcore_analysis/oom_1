@@ -1,0 +1,386 @@
+The analysis of kernel crash dump shows that this system went out of memory (OOM) in Normal
+zone (ZONE_NORMAL) of Node 0.
+
+A detail investigation shows that:
+
+o The total usable physical memory on the system is 62 GiB.
+  - ~59.81 GiB of the physical memory is allocated to user-space applications.
+  - 'java' tasks were the largest consumer of the total physical memory (RSS).
+  - 'java' tasks were alone utilizing ~42.82 GiB of the total physical memory (RSS).
+  - 'java' tasks were running with the privilege of UID (7063) and GID (8063).
+  - 'java' tasks were also the largest consumer of swap memory.
+  - The workload was demanding ~52.1 GiB over the commit limit of ~47 GiB of memory.
+
+o The evidences in the kernel crash dump (vmcore) pointing towards:
+  - High memory usage is user-space ('java' tasks).
+  - Memory over-commitment abuse due to an over-sized workload.
+
+Here's an excerpt from the crash analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: NVMBD2BDY190D00
+     RELEASE: 3.10.0-229.el7.x86_64
+       PANIC: "Kernel panic - not syncing: Out of memory: system-wide panic_on_oom is enabled"
+
+crash> sys -i | grep -e DMI_SYS_VENDOR -A 1
+         DMI_SYS_VENDOR: HP
+       DMI_PRODUCT_NAME: ProLiant DL380 Gen9
+
+crash> sysctl_panic_on_oom
+sysctl_panic_on_oom = $1 = 1
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+[639378.176230] Kernel panic - not syncing: Out of memory: system-wide panic_on_oom is enabled
+[639378.176250] CPU: 22 PID: 4498 Comm: ovcd Tainted: GFO --------------   3.10.0-229.el7.x86_64 #1
+[639378.176544] Hardware name: HP ProLiant DL380 Gen9/ProLiant DL380 Gen9, BIOS P89 01/22/2018
+[639378.177122]  ffffffff818375e8 0000000034d2253e ffff88084f8e79c0 ffffffff81603f36
+[639378.177733]  ffff88084f8e7a40 ffffffff815fd7da ffff881000000010 ffff88084f8e7a50
+[639378.178361]  ffff88084f8e79f0 0000000034d2253e 000000000000004a ffffffff8183b0a6
+[639378.178950] Call Trace:
+[639378.179246]  [<ffffffff81603f36>] dump_stack+0x19/0x1b
+[639378.179537]  [<ffffffff815fd7da>] panic+0xd8/0x1e7
+[639378.179847]  [<ffffffff8115a235>] check_panic_on_oom+0x55/0x60
+[639378.180171]  [<ffffffff8115a62b>] out_of_memory+0x23b/0x4f0
+[639378.180484]  [<ffffffff81160a65>] __alloc_pages_nodemask+0xa95/0xb90
+[639378.180778]  [<ffffffff8119efd9>] alloc_pages_current+0xa9/0x170
+[639378.181081]  [<ffffffff811568c7>] __page_cache_alloc+0x97/0xc0
+[639378.181381]  [<ffffffff81158bb8>] filemap_fault+0x188/0x430
+[639378.181669]  [<ffffffff8117e22e>] __do_fault+0x7e/0x510
+[639378.181956]  [<ffffffff81182585>] handle_mm_fault+0x3d5/0xd60
+[639378.182243]  [<ffffffff810d20d8>] ? get_futex_key+0x1c8/0x2b0
+[639378.182532]  [<ffffffff8160f1e6>] __do_page_fault+0x156/0x520
+[639378.182819]  [<ffffffff810d4ec2>] ? do_futex+0x122/0x5b0
+[639378.183106]  [<ffffffff8160f5ca>] do_page_fault+0x1a/0x70
+[639378.183394]  [<ffffffff8160b808>] page_fault+0x28/0x30
+[..]
+
+Out of memory (OOM) is a state of computer  operation where *no* additional memory can be
+allocated for use by programs or the  operating system. Such a system will be *unable* to
+load any additional programs and since many programs may load additional data into memory
+during execution these will cease to function correctly. This occur because all available
+memory has been allocated.
+
+When the system runs out of memory, the 'oom_kill' kernel code get initiated and it tries
+to terminate one or more process(es) in order to free up enough memory to keep the system
+operational. The badness() function is *responsible* to select  which process(es) will be
+terminated using a scoring heuristic, and the memory size of the process is the basis for
+the badness(). When *no* more process(es) left on the system  that can fall under scoring
+system of badness() function, then the kernel evokes the panic() function to *reboot* the
+system.
+
+Normal zone information of Node 0 and Node 1:
+
+crash> kmem -z | grep -e Normal -A 3
+NODE: 0  ZONE: 2  ADDR: ffff88087ffda000  NAME: "Normal"
+  SIZE: 7864320  MIN/LOW/HIGH: 78103/97628/117154
+  VM_STAT:
+                NR_FREE_PAGES: 77937
+--
+NODE: 1  ZONE: 2  ADDR: ffff88107ffd7000  NAME: "Normal"
+  SIZE: 8388608  MIN/LOW/HIGH: 83398/104247/125097
+  VM_STAT:
+                NR_FREE_PAGES: 83202
+
+Notice that 'NR_FREE_PAGES' in ZONE_NORMAL of Node 0 & Node 1 are below 'MIN' watermark.
+It means the minimum requirement of memory (min) is greater than available memory (free)
+in Normal Zone (ZONE_NORMAL) of Node 0 and Node 1.
+
+The analysis of memory utilization indicates that this system was utilizing almost ~100%
+of physical memory and 100% of swap memory.
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  16264825        62 GB         ----
+         FREE    198053     773.6 MB    1% of TOTAL MEM
+         USED  16066772      61.3 GB   98% of TOTAL MEM
+       SHARED     33051     129.1 MB    0% of TOTAL MEM
+      BUFFERS       434       1.7 MB    0% of TOTAL MEM
+       CACHED     16705      65.3 MB    0% of TOTAL MEM
+         SLAB     59543     232.6 MB    0% of TOTAL MEM
+
+   TOTAL HUGE        0            0         ----
+    HUGE FREE        0            0    0% of TOTAL HUGE
+
+   TOTAL SWAP  4194303        16 GB         ----
+    SWAP USED  4194303        16 GB  100% of TOTAL SWAP
+    SWAP FREE        0            0    0% of TOTAL SWAP
+
+ COMMIT LIMIT  12326715        47 GB         ----
+    COMMITTED  13655872      52.1 GB  110% of TOTAL LIMIT
+
+The actual committed memory exceed the commit limit of 47 GiB by ~5.1 GiB.
+
+The total memory allocated to user-space process(es) is ~59.82 GiB.
+
+crash> ps -u -G | sed 's/>//g' | awk '{ total += $8 } END { printf "Total RSS of user-mode: %.02f GiB\n", total/2^20 }'
+Total RSS of user-mode: 59.82 GiB
+
+'java' tasks were the largest consumer of physical memory (Resident Set Size).
+
+crash> ps -Gu java
+   PID    PPID  CPU       TASK        ST  %MEM     VSZ    RSS  COMM
+  20587  20586  25  ffff8808509ecfa0  IN  40.2 65885760 27793924  java
+  35556  35555   1  ffff8807d56c96c0  IN  24.7 46287968 17112156  java
+
+'java' tasks were alone utilizing ~42.82 GiB of the total physical memory.
+
+crash> ps -Gu java | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 " GB"}'
+total 42.8258 GB
+
+List of user-space tasks and their corresponding memory usage (RSS):
+
+crash> ps -Gu | sed 's/^>//' | awk '{ m[$9]+=$8 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+                java   44906080 KiB
+               mmfsd   16868724 KiB
+              sqlldr     347644 KiB
+              jstart     190712 KiB
+             splunkd     128260 KiB
+              python      77476 KiB
+        OSWatcher.sh      69548 KiB
+     systemd-journal      29448 KiB
+         sapstartsrv      29368 KiB
+            midaemon      10312 KiB
+                coda       8940 KiB
+             opcmona       7880 KiB
+            rsyslogd       7260 KiB
+             opcmsga       5272 KiB
+               snmpd       4468 KiB
+              agtrep       4420 KiB
+            saposcol       3948 KiB
+             ovbbccb       2412 KiB
+                ovcd       2324 KiB
+          hpasmlited       2160 KiB
+             systemd       2028 KiB
+                nmon       1800 KiB
+             nbdisco       1548 KiB
+           amsHelper       1252 KiB
+               tuned        864 KiB
+        mmccrmonitor        668 KiB
+             opcacta        576 KiB
+          irqbalance        576 KiB
+             opcmsgi        564 KiB
+               opcle        528 KiB
+               vnetd        464 KiB
+             polkitd        464 KiB
+         saphostexec        432 KiB
+         dbus-daemon        396 KiB
+               sleep        332 KiB
+      systemd-logind        308 KiB
+                bpcd        288 KiB
+      OSWatcherFM.sh        284 KiB
+                ntpd        240 KiB
+               crond        208 KiB
+              ocsbbd        192 KiB
+              auditd        192 KiB
+     jc.sapDAA_SMDA9        188 KiB
+             dnsmasq        172 KiB
+              hpsmhd        160 KiB
+                rngd         96 KiB
+           rhsmcertd         88 KiB
+                  sh         84 KiB
+             rpcbind         64 KiB
+                 ttd         56 KiB
+            gssproxy         56 KiB
+           perfalarm         52 KiB
+        pbx_exchange         44 KiB
+               tg3sd         40 KiB
+                lsmd         36 KiB
+             hp-asrd         24 KiB
+                sshd         16 KiB
+          rotatelogs         16 KiB
+             ovconfd         12 KiB
+     tomcat_startup.          8 KiB
+       systemd-udevd          8 KiB
+            sapstart          8 KiB
+             runmmfs          8 KiB
+           rpc.statd          8 KiB
+               perfd          8 KiB
+             lvmetad          8 KiB
+              agetty          8 KiB
+                COMM          0 KiB
+
+'java' tasks were also the largest consumer of swap memory.
+
+List of user-space tasks and their corresponding swap usage:
+
+crash> pswap -Gk | awk '{ m[$3]+=$2 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+                java   16135112 KiB
+              jstart      96336 KiB
+             splunkd      69148 KiB
+               mmfsd      52212 KiB
+              python      37948 KiB
+         sapstartsrv      33108 KiB
+              hpsmhd      23816 KiB
+               perfd      17388 KiB
+               tuned      10344 KiB
+            midaemon       9784 KiB
+             runmmfs       8528 KiB
+             polkitd       8192 KiB
+               snmpd       6544 KiB
+         saphostexec       6380 KiB
+                coda       5736 KiB
+             opcmona       5584 KiB
+     jc.sapDAA_SMDA9       4168 KiB
+             nbdisco       4112 KiB
+              agtrep       3636 KiB
+                ovcd       3444 KiB
+             systemd       3112 KiB
+          hpasmlited       2860 KiB
+           perfalarm       2704 KiB
+             ovconfd       2624 KiB
+            saposcol       2044 KiB
+           amsHelper       1596 KiB
+             opcmsga       1592 KiB
+            sapstart       1200 KiB
+        mmccrmonitor       1128 KiB
+             opcacta       1120 KiB
+             opcmsgi       1020 KiB
+                bpcd       1020 KiB
+               opcle        972 KiB
+                sshd        960 KiB
+        pbx_exchange        936 KiB
+           rpc.statd        836 KiB
+             ovbbccb        684 KiB
+       systemd-udevd        612 KiB
+               crond        524 KiB
+             lvmetad        504 KiB
+             rpcbind        492 KiB
+            gssproxy        492 KiB
+                ntpd        476 KiB
+          rotatelogs        464 KiB
+            rsyslogd        456 KiB
+              auditd        340 KiB
+               vnetd        296 KiB
+     tomcat_startup.        208 KiB
+          irqbalance        196 KiB
+     systemd-journal        188 KiB
+      systemd-logind        176 KiB
+         dbus-daemon        172 KiB
+                  sh        168 KiB
+             dnsmasq        156 KiB
+               tg3sd        152 KiB
+                lsmd        116 KiB
+                 ttd        112 KiB
+              agetty        108 KiB
+      OSWatcherFM.sh        100 KiB
+               sleep         88 KiB
+             hp-asrd         88 KiB
+        OSWatcher.sh         84 KiB
+                rngd         80 KiB
+                nmon         76 KiB
+           rhsmcertd         72 KiB
+              ocsbbd         68 KiB
+              sqlldr          0 KiB
+                COMM          0 KiB
+
+Threads of 'java' task were running with the privilege of UID (7063) & GID (8063).
+
+crash> set 20587
+    PID: 20587
+COMMAND: "java"
+   TASK: ffff8808509ecfa0  [THREAD_INFO: ffff88046380c000]
+    CPU: 25
+  STATE: TASK_INTERRUPTIBLE
+
+crash> task -R mm
+PID: 20587  TASK: ffff8808509ecfa0  CPU: 25  COMMAND: "java"
+  mm = 0xffff8807e6b67080,
+
+crash> mm_struct.exe_file 0xffff8807e6b67080
+  exe_file = 0xffff881040f43300
+
+crash> struct file.f_path.dentry 0xffff881040f43300
+  f_path.dentry = 0xffff88081a5a09c0
+
+crash> files -d 0xffff88081a5a09c0
+     DENTRY           INODE           SUPERBLK     TYPE PATH
+ffff88081a5a09c0 ffff88081a514e78 ffff88104b3e0800 REG  /opt/subex/app/jdk_1.7.0_80/bin/java
+
+PID, UID and GID of 'java' task.
+
+crash> task_struct.pid 0xffff8808509ecfa0
+  pid = 20587
+
+crash> task_struct.cred 0xffff8808509ecfa0
+  cred = 0xffff88104cbfc600
+
+crash> cred.uid,gid 0xffff88104cbfc600
+  uid = {
+    val = 7063
+  }
+  gid = {
+    val = 8063
+  }
+
+Parent process hierarchy of 'java' task PID (20587):
+
+crash> ps -p 20587
+PID: 0      TASK: ffffffff81911440  CPU: 0   COMMAND: "swapper/0"
+ PID: 1      TASK: ffff881053c70000  CPU: 20  COMMAND: "systemd"
+  PID: 20586  TASK: ffff88044c2271c0  CPU: 7   COMMAND: "sh"
+   PID: 20587  TASK: ffff8808509ecfa0  CPU: 25  COMMAND: "java"
+
+List of some of the open files by 'java' task PID (20587):
+
+crash> files 20587 | head
+PID: 20587  TASK: ffff8808509ecfa0  CPU: 25  COMMAND: "java"
+ROOT: /    CWD: /rocra_home/rocra_binaries/rocra_server_07/bin
+ FD       FILE            DENTRY           INODE       TYPE PATH
+  0 ffff8810362a0300 ffff881053810240 ffff8810530a8850 CHR  /dev/null
+  1 ffff8810362a1400 ffff88081a532780 ffff8807d52cb770 REG  /rocra_home/rocra_logs/rocra_service_logs/rjil_tc_07.out
+  2 ffff8810362a1400 ffff88081a532780 ffff8807d52cb770 REG  /rocra_home/rocra_logs/rocra_service_logs/rjil_tc_07.out
+  3 ffff88104eaeef00 ffff88085140ce40 ffff8808469b64d0 REG  /rocra_home/rocra_logs/rocra_service_logs/00_rocra_gc_logs/tc07_gc20586.log
+  4 ffff88081dd17500 ffff880849238b40 ffff88081a6e9d58 REG  /opt/subex/app/jdk_1.7.0_80/jre/lib/rt.jar
+  5 ffff880503442500 ffff8810538e09c0 ffff8807d53b5450 REG  /rocra_home/rocra_binaries/rocra_server_07/lib/ant-1.5.3-1.jar
+  6 ffff880804428300 ffff8807d537cb40 ffff8807d53b5870 REG  /rocra_home/rocra_binaries/rocra_server_07/lib/ant-optional-1.5.3-1.jar
+
+The resource limits of 'java' task PID (20587):
+
+crash> ps -r 20587
+PID: 20587  TASK: ffff8808509ecfa0  CPU: 25  COMMAND: "java"
+      RLIMIT     CURRENT       MAXIMUM
+         CPU   (unlimited)   (unlimited)
+       FSIZE   (unlimited)   (unlimited)
+        DATA   (unlimited)   (unlimited)
+       STACK    134217728     134217728
+        CORE   (unlimited)   (unlimited)
+         RSS   (unlimited)   (unlimited)
+       NPROC      65536         65536
+      NOFILE     500000        500000
+     MEMLOCK      65536         65536
+          AS   (unlimited)   (unlimited)
+       LOCKS   (unlimited)   (unlimited)
+  SIGPENDING     254046        254046
+    MSGQUEUE     819200        819200
+        NICE        0             0
+      RTPRIO        0             0
+      RTTIME   (unlimited)   (unlimited)
+
+Recommendations:
+****************
+[0x1] Check for any possibility of memory leak in the application using 'java.
+
+*OR*
+
+[0x1] Limit the memory utilization of 'java' task using RLIMIT or cgroup.
+
+Using RLIMIT facility:
+
+Refer: How to limit memory usage per process ?
+https://access.redhat.com/site/solutions/30555
+
+Using Cgroup facility:
+
+How do I limit memory usage for a process or set of processes using cgroups?
+https://access.redhat.com/solutions/67812
+
+*OR*
+
+[0x1] Increase the physical memory to handle the current workload.
+
+Let me know if you have any questions.

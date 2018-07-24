@@ -1,0 +1,11 @@
+在运行正常的服务器拷贝出openssl软件包：
+# tar cfz - $(rpm -ql openssl) | base64 > repair-openssl
+
+把repair-openssl内容拷贝至剪切板
+
+在问题服务器上执行:
+# cat > repair-openssl
+粘贴至此
+ctl+D退出
+# cp repair-openssl /
+# cd /; base64 -d < repair-openssl | tar xfz -

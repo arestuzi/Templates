@@ -1,0 +1,192 @@
+The analysis of kernel crash dump shows that the server was intentionally crashed via SysRq
+panic event (c) by executing 'echo c > /proc/sysrq-trigger' from the bash terminal.
+
+Here's an excerpt from the crash analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: rtpldbdprcr08
+     RELEASE: 2.6.32-696.23.1.el6.x86_64
+       PANIC: "SysRq : Trigger a crash"
+
+crash> sys -i | grep -e DMI_SYS_VENDOR -A 1
+         DMI_SYS_VENDOR: HP
+       DMI_PRODUCT_NAME: ProLiant BL460c Gen9
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+SysRq : Trigger a crash
+BUG: unable to handle kernel NULL pointer dereference at (null)
+IP: [<ffffffff813634f6>] sysrq_handle_crash+0x16/0x20
+PGD 80000003f46ec067 PUD 1faba29067 PMD 0
+Oops: 0002 [#1] SMP
+last sysfs file: /sys/devices/pci0000:00/0000:00:03.0/0000:08:00.0/host1/rport-1:0-2/target1:0:0/1:0:0:25/state
+CPU 2
+[..]
+
+The panic task is 'bash' PID (25674):
+
+crash> set -p
+    PID: 25674
+COMMAND: "bash"
+   TASK: ffff881d52d52ab0  [THREAD_INFO: ffff880bfa194000]
+    CPU: 2
+  STATE: TASK_RUNNING (SYSRQ)
+
+crash> files -R sysrq
+PID: 25674  TASK: ffff881d52d52ab0  CPU: 2   COMMAND: "bash"
+ROOT: /    CWD: /var/log
+ FD       FILE            DENTRY           INODE       TYPE PATH
+  1 ffff880936084b80 ffff88150c09f840 ffff88173b8abd48 REG  /proc/sysrq-trigger
+
+crash> p -d __sysrq_enabled
+__sysrq_enabled = $1 = 1
+
+The system was utilizing ~90% of physical memory & ~99% of swap memory at the time of crash.
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  66101853     252.2 GB         ----
+         FREE   6200850      23.7 GB    9% of TOTAL MEM
+         USED  59901003     228.5 GB   90% of TOTAL MEM
+       SHARED     62072     242.5 MB    0% of TOTAL MEM
+      BUFFERS     33080     129.2 MB    0% of TOTAL MEM
+       CACHED   6495470      24.8 GB    9% of TOTAL MEM
+         SLAB  52835757     201.6 GB   79% of TOTAL MEM
+
+   TOTAL HUGE         0            0         ----
+    HUGE FREE         0            0    0% of TOTAL HUGE
+
+   TOTAL SWAP  15359999      58.6 GB         ----
+    SWAP USED  15343437      58.5 GB   99% of TOTAL SWAP
+    SWAP FREE     16562      64.7 MB    0% of TOTAL SWAP
+
+ COMMIT LIMIT  48410925     184.7 GB         ----
+    COMMITTED  40091816     152.9 GB   82% of TOTAL LIMIT
+
+Total 201.60 GiB of the physical memory was allocated to kernel slab objects.
+
+crash> kmem -i | grep -e PAGES -e SLAB
+                 PAGES        TOTAL      PERCENTAGE
+         SLAB  52835757     201.6 GB   79% of TOTAL MEM
+
+The largest consumer of the slab memory is 'size-32' (I.E ~201 GiB).
+
+crash> kmem -s size-32
+CACHE            NAME                 OBJSIZE   ALLOCATED       TOTAL    SLABS  SSIZE
+ffff88207fc00040 size-32                   32  5899979873  5899980128 52678394     4k
+
+crash> !bc -q
+scale=2
+(52678394*4)/2^20
+200.95
+
+Raw content of 'size-32' slab objects:
+
+crash> kmem -S size-32 | grep -oE '\[ffff.{12}\]' | grep -oE 'ffff.{12}' > allocated.txt
+
+crash> !cat allocated.txt | awk '{print "0x"$1}' > new-allocated.txt
+
+crash> rd < new-allocated.txt 4 | head -n 20
+ffff880a2032c200:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c210:  0000000000000000 0000000000000000   ................
+ffff880a2032c220:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c230:  0000000000000000 0000000000000000   ................
+ffff880a2032c260:  000007c8000007c8 000000010000009d   ................
+ffff880a2032c270:  0000000000000000 0000000000000000   ................
+ffff880a2032c280:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c290:  0000000000000000 0000000000000000   ................
+ffff880a2032c2a0:  0000005900000059 0000000100000022   Y...Y...".......
+ffff880a2032c2b0:  0000000000000000 0000000000000000   ................
+ffff880a2032c2c0:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c2d0:  0000000000000000 0000000000000000   ................
+ffff880a2032c2e0:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c2f0:  0000000000000000 0000000000000000   ................
+ffff880a2032c300:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c310:  0000000000000000 0000000000000000   ................
+ffff880a2032c320:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c330:  0000000000000000 0000000000000000   ................
+ffff880a2032c340:  0000005900000059 0000000000000000   Y...Y...........
+ffff880a2032c350:  0000000000000000 0000000000000000   ................
+
+The above pattern is not known to us. The kernel was booted without SLAB debug enabled thus
+its not possible to track the object owner.
+
+Further analysis shows that an unsigned (U) module [CyProtectDrv] is *linked* to the kernel.
+
+crash> mod -t
+NAME          TAINTS
+CyProtectDrv  (U)
+
+Details of an unsigned (U) module: CyProtectDrv
+
+crash> mod | grep -e NAME -e CyProtectDrv
+     MODULE       NAME                   SIZE  OBJECT FILE
+ffffffffa037b960  CyProtectDrv         140242  (not loaded)  [CONFIG_KALLSYMS]
+
+crash> module.state,name,version,srcversion 0xffffffffa037b960
+  state      = MODULE_STATE_LIVE
+  name       = "CyProtectDrv\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+  version    = 0xffff88204bb76960 "2.0.1470.317"
+  srcversion = 0xffff88204e519a00 "C9E5EEF9A77C24F128E79BA"
+
+We've inspected third party [CyProtectDrv] kernel module to the possible extent & found out
+some places where the allocation of the 'size-32' slab object can happen.
+
+crash> module.strtab,core_strtab 0xffffffffa037b960
+  strtab = 0xffffffffa0380628 ""
+  core_strtab = 0xffffffffa0380628 ""
+
+crash> sym -m CyProtectDrv | grep -e malloc
+ffffffffa0363820 (t) CY_Kmalloc
+ffffffffa0363e00 (t) CY_Vmalloc
+ffffffffa037c1e8 (b) gPilotDataVmalloc
+
+For instance, here is how kmalloc wrapper looks like.
+
+crash> sym CY_Kmalloc
+ffffffffa0363820 (t) CY_Kmalloc [CyProtectDrv]
+
+crash> dis ffffffffa0363820
+0xffffffffa0363820 <CY_Kmalloc>:	push   %rbp
+0xffffffffa0363821 <CY_Kmalloc+1>:	mov    %rsp,%rbp
+0xffffffffa0363824 <CY_Kmalloc+4>:	nopl   0x0(%rax,%rax,1)
+0xffffffffa0363829 <CY_Kmalloc+9>:	mov    %esi,%eax
+0xffffffffa036382b <CY_Kmalloc+11>:	mov    $0x20,%esi
+0xffffffffa0363830 <CY_Kmalloc+16>:	cmp    $0x1,%eax
+0xffffffffa0363833 <CY_Kmalloc+19>:	jbe    0xffffffffa0363840 <CY_Kmalloc+32>
+0xffffffffa0363835 <CY_Kmalloc+21>:	callq  0xffffffff81183230 <__kmalloc>
+0xffffffffa036383a <CY_Kmalloc+26>:	leaveq
+0xffffffffa036383b <CY_Kmalloc+27>:	retq
+0xffffffffa036383c <CY_Kmalloc+28>:	nopl   0x0(%rax)
+0xffffffffa0363840 <CY_Kmalloc+32>:	mov    %eax,%eax
+0xffffffffa0363842 <CY_Kmalloc+34>:	mov    -0x5fc8b678(,%rax,4),%esi
+0xffffffffa0363849 <CY_Kmalloc+41>:	callq  0xffffffff81183230 <__kmalloc>
+0xffffffffa036384e <CY_Kmalloc+46>:	leaveq
+0xffffffffa036384f <CY_Kmalloc+47>:	retq
+
+It takes a size from the %edi and passes it to CY_Kmalloc().
+
+For instance, here is one of the places where the size is hard-coded and is 32:
+
+crash> dis -l 0xffffffffa0368aca 0x2
+0xffffffffa0368aca <cyl_load_binary+250>:	mov    $0x20,%edi
+0xffffffffa0368acf <cyl_load_binary+255>:	callq  0xffffffffa0363820 <CY_Kmalloc>
+
+crash> pd 0x20
+$2 = 32
+
+Based on the above evidences, I suspect that there is a leak within the [CyProtectDrv]
+module however Red Hat does **not** have the source code of this module for for detail
+investigation, hence a case would need to be opened with the provider of [CyProtectDrv]
+module for their opinion.
+
+Recommendations:
+****************
+[0x1] Contact the provided of [CyProtectDrv] module & take their opinion on this issue.
+[0x2] Check for any known memory leak issues.
+[0x3] Blacklist the [CyProtectDrv] module and check if this is reproducible.
+      Refer: https://access.redhat.com/solutions/41278
