@@ -1,0 +1,297 @@
+The analysis of kernel crash dump shows that this system went out of memory (OOM) in Normal
+zone (ZONE_NORMAL) of Node 0.
+
+A detail investigation shows that:
+
+o This system was running low on memory in node 0 of normal zone.
+  - NR_FREE_PAGES in ZONE_NORMAL of node 0 are below to WMARK_LOW.
+
+o The total usable physical memory on the system is ~442.7 GiB.
+  -  ~183 GiB of the physical memory was allocated to user-space applications.
+  - 'java' tasks were the largest consumer of the total physical memory (RSS).
+  - 'java' tasks were alone utilizing ~133.74 GiB of the total physical memory (RSS).
+  - 'java' tasks were also the largest consumer of swap memory.
+
+  - ~250.8 GiB of the physical memory was allocated to kernel slab objects.
+  - The largest consumers of the slab memory are kmalloc-192 and kmalloc-128.
+  - ~198.91 GiB of the slab memory was allocated to kmalloc-192.
+  - ~038.53 GiB of the slab memory was allocated to kmalloc-128.
+  - The kmalloc-192 and kmalloc-128 objects belong to an unsigned (U) module [secfs].
+
+Here's an excerpt from the crash analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: auslslnxsp0238.rad.wbcau.westpac.com.au
+     RELEASE: 3.10.0-327.62.1.el7.x86_64
+       PANIC: "Kernel panic - not syncing: Out of memory: system-wide panic_on_oom is enabled"
+
+crash> sys -i | grep -e DMI_SYS_VENDOR -A 1
+         DMI_SYS_VENDOR: VMware, Inc.
+       DMI_PRODUCT_NAME: VMware Virtual Platform
+
+crash> sysctl_panic_on_oom
+sysctl_panic_on_oom = $1 = 1
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+[4096762.828253] Kernel panic - not syncing: Out of memory: system-wide panic_on_oom is enabled
+[4096762.829551] CPU: 3 PID: 23887 Comm: python Tainted: POE  ------------   3.10.0-327.62.1.el7.x86_64 #1
+[4096762.830247] Hardware name: VMware, Inc. VMware Virtual Platform/440BX Desktop Reference Platform, BIOS 6.00 09/21/2015
+[4096762.830980]  ffffffff81875388 0000000076b3fbb1 ffff881c1f06fa60 ffffffff81636e5d
+[4096762.831730]  ffff881c1f06fae0 ffffffff816306d0 ffffffff00000010 ffff881c1f06faf0
+[4096762.832490]  ffff881c1f06fa90 0000000076b3fbb1 000000000000002e ffffffff81879065
+[4096762.833256] Call Trace:
+[4096762.834021]  [<ffffffff81636e5d>] dump_stack+0x19/0x1b
+[4096762.834795]  [<ffffffff816306d0>] panic+0xd8/0x1e7
+[4096762.835550]  [<ffffffff8116d645>] check_panic_on_oom+0x55/0x60
+[4096762.836300]  [<ffffffff8116da3b>] out_of_memory+0x23b/0x4f0
+[4096762.837042]  [<ffffffff81173ea6>] __alloc_pages_nodemask+0xaa6/0xba0
+[4096762.837800]  [<ffffffff811b4d1a>] alloc_pages_current+0xaa/0x170
+[4096762.838547]  [<ffffffff811696a7>] __page_cache_alloc+0x97/0xb0
+[4096762.839287]  [<ffffffff8116bf00>] filemap_fault+0x170/0x410
+[4096762.840020]  [<ffffffff8119310e>] __do_fault+0x7e/0x510
+[4096762.840759]  [<ffffffff81197771>] handle_mm_fault+0x5f1/0xf70
+[4096762.841485]  [<ffffffff81642a40>] __do_page_fault+0x150/0x450
+[4096762.842199]  [<ffffffff81642d63>] do_page_fault+0x23/0x80
+[4096762.842905]  [<ffffffff8163f048>] page_fault+0x28/0x30
+[..]
+
+Out of memory (OOM) is a state of computer  operation where *no* additional memory can be
+allocated for use by programs or the  operating system. Such a system will be *unable* to
+load any additional programs and since many programs may load additional data into memory
+during execution these will cease to function correctly. This occur because all available
+memory has been allocated.
+
+When the system runs out of memory, the 'oom_kill' kernel code get initiated and it tries
+to terminate one or more process(es) in order to free up enough memory to keep the system
+operational. The badness() function is *responsible* to select  which process(es) will be
+terminated using a scoring heuristic, and the memory size of the process is the basis for
+the badness().
+
+Normal zone information of Node 0:
+
+crash> kmem -z | grep -e Normal -A 3
+NODE: 0  ZONE: 2  ADDR: ffff8870bfe1b000  NAME: "Normal"
+  SIZE: 117178368  MIN/LOW/HIGH: 16791/20988/25186
+  VM_STAT:
+                NR_FREE_PAGES: 16757
+
+Notice that 'NR_FREE_PAGES' in ZONE_NORMAL of Node 0 is *below* 'MIN' water mark. It means
+the minimum requirement of  memory (min) is greater than available memory (free) in Normal
+Zone (ZONE_NORMAL) of Node 0.
+
+The analysis of memory utilization indicates that this system was utilizing almost 100% of
+physical memory and 100% of swap memory.
+
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  116051394     442.7 GB         ----
+         FREE     471274       1.8 GB    0% of TOTAL MEM
+         USED  115580120     440.9 GB   99% of TOTAL MEM
+       SHARED      36046     140.8 MB    0% of TOTAL MEM
+      BUFFERS       4747      18.5 MB    0% of TOTAL MEM
+       CACHED     897231       3.4 GB    0% of TOTAL MEM
+         SLAB   65757229     250.8 GB   56% of TOTAL MEM
+
+   TOTAL HUGE         0            0         ----
+    HUGE FREE         0            0    0% of TOTAL HUGE
+
+   TOTAL SWAP    524287         2 GB         ----
+    SWAP USED    524287         2 GB  100% of TOTAL SWAP
+    SWAP FREE         0            0    0% of TOTAL SWAP
+
+ COMMIT LIMIT  58549984     223.4 GB         ----
+    COMMITTED  82647392     315.3 GB  141% of TOTAL LIMIT
+
+The total memory allocated to user-space process(es) is ~183 GiB.
+
+crash> ps -u -G | sed 's/>//g' | awk '{ total += $8 } END { printf "Total RSS of user-mode: %.02f GiB\n", total/2^20 }'
+Total RSS of user-mode: 183.00 GiB
+
+'java' tasks were the largest consumer of physical memory (Resident Set Size).
+
+crash> ps -Gu java
+   PID    PPID  CPU       TASK        ST  %MEM      VSZ      RSS  COMM
+  12913  12897   4  ffff8807226be780  IN   0.1  2573932   421796  java
+  13049  13035  21  ffff883353a99700  IN   2.8 16205740 13087756  java
+  13186      1  15  ffff881ce1cf9700  IN   1.1 17748472  4990032  java
+  13782  13773  13  ffff880a29825c00  IN   0.1  2441620   326512  java
+  23316  23295  18  ffff884f66a01700  IN   0.5 11220196  2404860  java
+  23544  23523   6  ffff886e59752e00  IN   3.9 44557264 18659780  java
+  24820  24799  18  ffff883241a6f300  IN   4.6 44685508 21748856  java
+  24875  24831   4  ffff880b16012280  IN   4.8 44563628 22557132  java
+  24885  24851  10  ffff882fe6f78b80  IN   4.5 44570996 21071040  java
+  25010  24986  20  ffff880e05442e00  IN   4.1 44535484 19306748  java
+  31057      1  11  ffff88032d8ec500  IN   0.6  5235036  2959320  java
+  32346  32330  10  ffff884d41b35c00  IN   2.7 23295284 12708020  java
+
+List of user-space tasks and their corresponding memory usage (RSS):
+
+crash> ps -Gu | sed 's/^>//' | awk '{ m[$9]+=$8 } END { for (item in m) { printf "%20s %10s KiB\n", item, m[item] } }' | sort -k 2 -r -n
+                java  140241852 KiB
+              secfsd   46152536 KiB
+                jsvc    4839072 KiB
+              python     211692 KiB
+             splunkd     170728 KiB
+     systemd-journal      94876 KiB
+         chef-client      57388 KiB
+           BESClient      41696 KiB
+           python2.7      14008 KiB
+            nsrexecd      12816 KiB
+                  du      12712 KiB
+            vmtoolsd       7652 KiB
+                nrpe       4316 KiB
+                bash       3956 KiB
+               tuned       3832 KiB
+             sssd_be       2860 KiB
+     container-execu       2532 KiB
+            sssd_nss       1984 KiB
+             systemd       1720 KiB
+               crond       1592 KiB
+            sssd_pam       1256 KiB
+           sssd_sudo       1240 KiB
+              pickup       1200 KiB
+        tlmagent.bin       1148 KiB
+                sssd       1112 KiB
+                sshd       1056 KiB
+                 vmd       1012 KiB
+             rpcbind        556 KiB
+                sadc        548 KiB
+            rsyslogd        448 KiB
+      systemd-logind        444 KiB
+         dbus-daemon        428 KiB
+     check_pro_ssh_i        344 KiB
+              auditd        344 KiB
+      performance.sh        324 KiB
+                ntpd        312 KiB
+                 sar        292 KiB
+           rhsmcertd        240 KiB
+                  sh        236 KiB
+               rhnsd        224 KiB
+             lvmetad        220 KiB
+       systemd-udevd        212 KiB
+              master        180 KiB
+                qmgr        124 KiB
+               pgrep        124 KiB
+      check_logfiles         72 KiB
+                 atd         36 KiB
+              xinetd          8 KiB
+              agetty          8 KiB
+               acpid          8 KiB
+                COMM          0 KiB
+
+'java' tasks were alone utilizing ~133.74 GiB of the total physical memory.
+
+crash> ps -Gu java | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 " GB"}'
+total 133.745 GB
+
+'java' tasks were also the largest consumer of swap memory.
+
+Total 250.8 GiB of the physical memory was allocated to kernel slab objects.
+
+crash> kmem -i | grep -e PERCENTAGE -e SLAB
+                 PAGES        TOTAL      PERCENTAGE
+         SLAB  65757229     250.8 GB   56% of TOTAL MEM
+
+The largest consumers of the slab memory are kmalloc-192 and kmalloc-128.
+
+Total 198.91 GiB of the slab memory was allocated to kmalloc-192.
+
+crash> kmem -s kmalloc-192
+CACHE            NAME                 OBJSIZE   ALLOCATED       TOTAL     SLABS  SSIZE
+ffff886efc803800 kmalloc-192              192  1093002216  1095030594  26072266     8k
+
+crash> !bc -q
+scale=2
+26072266*8/2^20
+198.91
+
+Total 038.53 GiB of the slab memory was allocated to kmalloc-128.
+
+crash> kmem -s kmalloc-128
+CACHE            NAME                 OBJSIZE  ALLOCATED      TOTAL     SLABS  SSIZE
+ffff886efc803900 kmalloc-128              128  323247773  323249664  10101552     4k
+
+crash> !bc -q
+scale=2
+10101552*4/2^20
+38.53
+
+The kmalloc-192 and kmalloc-128 objects belong to an unsigned (U) module [secfs].
+
+crash> kmem -S kmalloc-192 | grep -oE '\[ffff.{12}\]' | grep -oE 'ffff.{12}' > allocated.txt
+
+crash> !cat allocated.txt | awk '{print "0x"$1}' > new-allocated.txt
+
+crash> rd -SS < new-allocated.txt -a 0x32 | sort | uniq -c | head
+      1 ffff880033978001:  ,S
+      1 ffff880033978008:  /|hdfs|/foundry/catalog/a0e9288f-e432-422c
+      1 ffff8800339780c1:  ,S
+      1 ffff8800339780c8:  /|hdfs|/foundry/catalog/a0e9288f-e432-422c
+      1 ffff880033978181:  ,S
+      1 ffff880033978188:  /|hdfs|/foundry/catalog/a0e9288f-e432-422c
+      1 ffff880033978241:  ,S
+      1 ffff880033978248:  /|hdfs|/foundry/catalog/a0e9288f-e432-422c
+      1 ffff880033978301:  ,S
+      1 ffff880033978308:  /|hdfs|/foundry/catalog/a0e9288f-e432-422c
+
+crash> x/s 0xffff880033978008
+0xffff880033978008:     "/|hdfs|/foundry/catalog/a0e9288f-e432-422c-9391-36930674e165/00000000-1f13-333c-b744-e5a227d10e2b/c0f86d85-4400-403d-b672-65cad41de243"
+
+crash> kmem -S kmalloc-128 | grep -oE '\[ffff.{12}\]' | grep -oE 'ffff.{12}' > allocated.txt
+
+crash> !cat allocated.txt | awk '{print "0x"$1}' > new-allocated.txt
+
+crash> rd -SS < new-allocated.txt -a 0x32 | sort | uniq -c | head
+      6
+      1 ffff8800b920b001:  ,S
+      1 ffff8800b920b008:  /|hdfs|/user/bdpfuncfwprd/.staging/job_151
+      1 ffff8800b920b081:  ,S
+      1 ffff8800b920b088:  /|hdfs|/app-logs/zeppelin/logs-ifile/appli
+      1 ffff8800b920b101:  ,S
+      1 ffff8800b920b108:  /|hdfs|/app-logs/bdpfunc0003prd/logs-ifile
+      1 ffff8800b920b201:  ,S
+      1 ffff8800b920b208:  /|hdfs|/app-logs/bdpfuncfwprd/logs-ifile/a
+      1 ffff8800b920b281:  ,S
+
+crash> x/s 0xffff8800b920b008
+0xffff8800b920b008:	"/|hdfs|/user/bdpfuncfwprd/.staging/job_1518411020164_0621/libjars/atlas-plugin-classloader-0.8.0.2.6.3.0-235.jar"
+
+crash> mount | grep -e NAME -e hdfs
+     MOUNT           SUPERBLK     TYPE   DEVNAME   DIRNAME
+ffff886e4a775800 ffff886e4a495800 secfs2 /data1/hadoop/hdfs/data /data1/hadoop/hdfs/data
+ffff886e4a649f00 ffff886e4f739800 secfs2 /data2/hadoop/hdfs/data /data2/hadoop/hdfs/data
+ffff886e4a4e8500 ffff886e4f73a800 secfs2 /data3/hadoop/hdfs/data /data3/hadoop/hdfs/data
+ffff886e457aaa00 ffff886e4a494000 secfs2 /data4/hadoop/hdfs/data /data4/hadoop/hdfs/data
+ffff886e4904a100 ffff886e4a494800 secfs2 /data5/hadoop/hdfs/data /data5/hadoop/hdfs/data
+ffff886e578b6e00 ffff886e45bd4000 secfs2 /data6/hadoop/hdfs/data /data6/hadoop/hdfs/data
+ffff886e57852900 ffff886e4a497000 secfs2 /data7/hadoop/hdfs/data /data7/hadoop/hdfs/data
+ffff886e4e948000 ffff886e4a492000 secfs2 /data8/hadoop/hdfs/data /data8/hadoop/hdfs/data
+ffff886e49235b00 ffff886e4a493800 secfs2 /data9/hadoop/hdfs/data /data9/hadoop/hdfs/data
+ffff886e4a58f700 ffff886e4a493000 secfs2 /datassd/hadoop/hdfs/data /datassd/hadoop/hdfs/data
+
+Details of unsigned (U) kernel module: [secfs2]
+
+crash> mod -t | grep -e NAME -e secfs2
+NAME    TAINTS
+secfs2  POE
+
+crash> mod | grep -e NAME -e secfs2
+     MODULE       NAME                         SIZE  OBJECT FILE
+ffffffffa0519700  secfs2                    1342256  (not loaded)  [CONFIG_KALLSYMS]
+
+crash> module.state,name,version,srcversion,sig_ok 0xffffffffa0519700
+  state      = MODULE_STATE_LIVE
+  name       = "secfs2\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+  version    = 0x0
+  srcversion = 0xffff886e506c09a0 "2C09178D238476816CAEAFA"
+  sig_ok     = false
+
+Recommendations:
+****************
+[0x1] Kindly engage the vendor of an unsigned (U) module [secfs2] for further assistance.
+[0x2] Check for any patches they have developed for this issue.

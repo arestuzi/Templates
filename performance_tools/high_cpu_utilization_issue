@@ -21,10 +21,10 @@ iostat -t -x $1 $2 > $dir/iostat-$File &
 sar -A $1 $2 > $dir/sar-$File &
 ps aux > $dir/ps-$File
 ps auxH > $dir/psH-$File
+echo 1 > /proc/sys/kernel/sysrq
+echo m > /proc/sysrq-trigger
+echo t > /proc/sysrq-trigger
 
 sleep $(($1 * $2))
-
+cp /var/log/messages $dir/
 tar cjf $dir.tar.bz2 $dir &> /dev/null
-
-#CPU consuming Process
-# ps -auxwww | awk '{print $2, $3, $11}' | sort -k2rn | head -n 10

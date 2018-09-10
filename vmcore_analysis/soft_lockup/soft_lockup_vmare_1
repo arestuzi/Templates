@@ -1,0 +1,191 @@
+The analysis of kernel crash dump shows that the kernel panic occurred due to soft lockup.
+
+Here's an excerpt from the analysis:
+
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: dc2nix2q44
+     RELEASE: 2.6.32-696.18.7.el6.x86_64
+       PANIC: "Kernel panic - not syncing: softlockup: hung tasks"
+
+crash> sys -i | grep -e DMI_PRODUCT_NAME -B 1
+         DMI_SYS_VENDOR: VMware, Inc.
+       DMI_PRODUCT_NAME: VMware Virtual Platform
+
+The default softlockup_thresh is 60:
+
+crash> softlockup_thresh
+softlockup_thresh = $1 = 60
+
+crash> softlockup_panic
+softlockup_panic = $2 = 1
+
+The panic task is 'java' PID (13457):
+
+crash> set -p
+    PID: 13457
+COMMAND: "java"
+   TASK: ffff880694a12ab0  [THREAD_INFO: ffff8806c31cc000]
+    CPU: 1
+  STATE: TASK_RUNNING (PANIC)
+
+Backtraces of the panic task:
+
+crash> bt
+PID: 13457  TASK: ffff880694a12ab0  CPU: 1   COMMAND: "java"
+ #0 [ffff880028283cb0] machine_kexec at ffffffff8103eb3b
+ #1 [ffff880028283d10] crash_kexec at ffffffff810d2772
+ #2 [ffff880028283de0] panic at ffffffff8154afb3
+ #3 [ffff880028283e60] watchdog_timer_fn at ffffffff810f3703
+ #4 [ffff880028283ea0] __run_hrtimer at ffffffff810aba1e
+ #5 [ffff880028283ef0] hrtimer_interrupt at ffffffff810abdbe
+ #6 [ffff880028283f70] local_apic_timer_interrupt at ffffffff8103759d
+ #7 [ffff880028283f90] smp_apic_timer_interrupt at ffffffff81558c15
+ #8 [ffff880028283fb0] apic_timer_interrupt at ffffffff81557483
+--- <IRQ stack> ---
+ #9 [ffff8806c31cff58] apic_timer_interrupt at ffffffff81557483
+    RIP: 00007f7c132cc8a5  RSP: 00007f7c113684f0  RFLAGS: 00010297
+    RAX: 0000000000000000  RBX: 00007f7c11368540  RCX: 00000006d10ca000
+    RDX: ffffffffffe11921  RSI: 00007f7bbc1bc1c0  RDI: 00000006d10ca000
+    RBP: ffffffff8155747e   R8: 00000006d10ca000   R9: 00007f7c138fb0a0
+    R10: 0000000000000064  R11: 0000000000000040  R12: ffff8800282861e8
+    R13: ffffffff81556350  R14: ffffffff81556357  R15: ffffffff8155635e
+    ORIG_RAX: ffffffffffffff10  CS: 0033  SS: 002b
+
+A detail investigations shows that the real-time runqueue for CPU 1 is 'throttled'.
+
+crash> rq.cpu,rt.rt_throttled per_cpu__runqueues:1
+[1]: ffff880028298c00
+  cpu = 1
+  rt.rt_throttled = 1,   <<<---
+
+Notice that the CPU 1 has the 'rt.rt_throttled' bit set (1).
+
+This has happened because it has exceeded it's runtime.
+
+crash> rq.cpu,rt.rt_time,rt.rt_runtime per_cpu__runqueues:1
+[1]: ffff880028298c00
+  cpu = 1
+  rt.rt_time    = 1650577275,
+  rt.rt_runtime = 1000000000,
+
+Notice that (rt.rt_time > rt.rt_runtime)
+
+When this happens the system will not run any real-time tasks on CPU.
+
+There is only one real-time task in the real-time runqueue of CPU 1:
+
+crash> rq.cpu,rt.rt_nr_running per_cpu__runqueues:1
+[1]: ffff880028298c00
+  cpu = 1
+  rt.rt_nr_running = 1,  <<<---
+
+Runqueue of CPU 1:
+
+crash> runq -c 1
+CPU 1 RUNQUEUE: ffff880028298c00
+  CURRENT: PID: 13457  TASK: ffff880694a12ab0  COMMAND: "java"
+  RT PRIO_ARRAY: ffff880028298d88
+     [  0] PID: 10     TASK: ffff880c2dbecab0  COMMAND: "watchdog/1"  <<<---
+  CFS RB_ROOT: ffff880028298c98
+     [120] PID: 14081  TASK: ffff880c2b4e5520  COMMAND: "tnslsnr"
+     [120] PID: 5283   TASK: ffff880abfaae040  COMMAND: "java"
+     [120] PID: 16925  TASK: ffff880abb1fcab0  COMMAND: "java"
+     [120] PID: 16936  TASK: ffff880c29d7eab0  COMMAND: "java"
+     [120] PID: 16916  TASK: ffff880c29e6e040  COMMAND: "java"
+     [120] PID: 13027  TASK: ffff8806b305aab0  COMMAND: "java"
+     [120] PID: 5977   TASK: ffff8808beaf2ab0  COMMAND: "java"
+     [120] PID: 16946  TASK: ffff880c1d0ea040  COMMAND: "java"
+     [120] PID: 5476   TASK: ffff8802924ceab0  COMMAND: "java"
+     [120] PID: 14228  TASK: ffff880c25fe4ab0  COMMAND: "ora_vkrm_pts"
+     [120] PID: 20337  TASK: ffff8807def92040  COMMAND: "java"
+     [120] PID: 16964  TASK: ffff880abfad4040  COMMAND: "java"
+     [120] PID: 20320  TASK: ffff88073c3ac040  COMMAND: "splunkd"
+     [120] PID: 5277   TASK: ffff880661472040  COMMAND: "java"
+     [120] PID: 20322  TASK: ffff88058c496ab0  COMMAND: "crond"
+     [120] PID: 757    TASK: ffff880c29c3a040  COMMAND: "vmmemctl"
+     [120] PID: 4767   TASK: ffff880c2af4c040  COMMAND: "collectd"
+     [120] PID: 5261   TASK: ffff880c2126f520  COMMAND: "java"
+
+The real-time task in the runqueue of CPU 1 is 'watchdog/1'.
+
+crash> set 10
+    PID: 10
+COMMAND: "watchdog/1"
+   TASK: ffff880c2dbecab0  [THREAD_INFO: ffff880c2dbf4000]
+    CPU: 1
+  STATE: TASK_RUNNING
+
+crash> task_struct.policy,rt_priority 0xffff880c2dbecab0
+  policy = 1
+  rt_priority = 99
+
+'watchdog/1' thread has been in Runnable State (RU) for ~1 Minute and 07 Seconds.
+
+crash> ps -m 10
+[ 0 00:01:07.426] [RU]  PID: 10     TASK: ffff880c2dbecab0  CPU: 1   COMMAND: "watchdog/1"
+
+Backtrace of the 'watchdog/1' thread PID (10):
+
+crash> bt
+PID: 10     TASK: ffff880c2dbecab0  CPU: 1   COMMAND: "watchdog/1"
+ #0 [ffff880c2dbf7dd0] schedule at ffffffff8154b6da
+ #1 [ffff880c2dbf7eb8] watchdog at ffffffff810f3a0a
+ #2 [ffff880c2dbf7ee8] kthread at ffffffff810a6d0e
+ #3 [ffff880c2dbf7f48] kernel_thread at ffffffff81557afa
+
+The watchdog thread (watchdog/1) in run-queue of CPU 1 is **not** permitted to run due to
+throttled real-time runqueue of CPU 1.
+
+The 'se.exec_max' value for 'watchdog/1' is 34650564324 ns (i.e 34 Seconds).
+
+crash> task_struct.se -ox
+struct task_struct {
+   [0x38] struct sched_entity se;
+}
+
+crash> sched_entity.exec_max -ox
+struct sched_entity {
+   [0xe8] u64 exec_max;
+}
+
+The high exec_max value caused throttling of a real-time runqueue, & thus the 'watchdog/1'
+thread was not able to run within the soft lockup timeout period.
+
+crash> pd ((struct task_struct *)0xffff880c2dbecab0)->se.exec_max
+$3 = 34650564324
+
+crash> pd (34650564324/1000000000)
+$4 = 34  ( Seconds )
+
+The above evidences suggests that this system is hitting a known kernel bug ID #1551475[1].
+
+Root Cause:
+***********
+The runqueue on systems with overcommitted CPUs are prone to ignoring clock updates. As a
+consequence, the runqueue was limited, which prevented critical tasks and their dependent
+tasks from running.
+
+Resolution:
+***********
+The fix for Bug #1551475[1] was released via errata: RHSA-2013:1645
+
+Errata Link  : https://access.redhat.com/errata/RHSA-2018:1319
+Package Name : kernel-2.6.32-696.28.1.el6.x86_64.rpm
+
+Recommendations:
+****************
+Update the kernel package to latest version (I.E kernel version 2.6.32-696.28.1.el6.x86_64).
+
+This update ensures that the runqueue does not *ignore* the clock updates. As a result, the
+critical tasks and their dependant tasks are able to run in such situations.
+
+Let me know if you have any questions.
+
+Regards,
+--
+Buland Singh
+Senior Software Maintenance Engineer
+
+[1] Bug 1551475 - Task stuck waiting on migration thread, rt_throttled is set. [rhel-6.9.z]
